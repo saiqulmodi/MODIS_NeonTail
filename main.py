@@ -1,10 +1,10 @@
 """
 main.py -- MODIS_NeonTail
 
-Phase 7, Step 2: pause. game_state gains a third value, "paused" -- Escape
-now pauses/resumes gameplay instead of quitting; Q quits from the pause
-screen (Escape still quits from the main menu, since there's nothing to
-"resume" there).
+Phase 7, Step 3: level select. From the main menu, L opens a screen to
+pick which of the 10 levels to start on (Left/Right to choose, Enter to
+confirm, Escape to go back) -- "Press ENTER to Play" remains a shortcut
+into whatever level was last loaded.
 """
 
 import json
@@ -21,6 +21,17 @@ TILE_WALL_COLOR = (60, 60, 90)  # dark slate -- reads as "structure", not floor
 
 def level_path(level_number):
     return LEVEL_DIR / f"level_{level_number:03d}.json"
+
+
+def reset_level(level_number):
+    """Load a level's walls and start positions. Shared by the initial
+    setup, N-key switching, and the level-select screen, so the loading
+    logic only lives in one place."""
+    walls, squirrel_start, viper_start = load_level(level_path(level_number))
+    squirrel_x, squirrel_y = squirrel_start
+    viper_x, viper_y = viper_start
+    viper_patrol_y = viper_y
+    return walls, squirrel_x, squirrel_y, viper_x, viper_y, viper_patrol_y
 
 
 def load_level(path):
@@ -113,9 +124,8 @@ def main():
     game_state = "menu"
 
     level_number = 1
-    walls, squirrel_start, viper_start = load_level(level_path(level_number))
-
-    squirrel_x, squirrel_y = squirrel_start
+    level_select_choice = 1  # which level is highlighted on the select screen
+    walls, squirrel_x, squirrel_y, viper_x, viper_y, viper_patrol_y = reset_level(level_number)
     animation_timer = 0.0
 
     # squirrel_state is "free" (normal play) or "stasis" (caught, frozen
@@ -123,8 +133,6 @@ def main():
     squirrel_state = "free"
     stasis_timer = 0.0
 
-    viper_x, viper_y = viper_start
-    viper_patrol_y = viper_y  # patrol height now comes from the level file
     viper_direction = 1  # 1 = moving right, -1 = moving left
 
     # viper_state is "active" (can see/chase normally) or "blinded"
@@ -153,8 +161,29 @@ def main():
                     game_state = "paused"
                 elif game_state == "paused":
                     game_state = "playing"
+                elif game_state == "level_select":
+                    game_state = "menu"
             if game_state == "menu":
                 if event.type == pygame.KEYDOWN and event.key in (pygame.K_RETURN, pygame.K_KP_ENTER):
+                    game_state = "playing"
+                if event.type == pygame.KEYDOWN and event.key == pygame.K_l:
+                    level_select_choice = level_number
+                    game_state = "level_select"
+            elif game_state == "level_select":
+                if event.type == pygame.KEYDOWN and event.key in (pygame.K_LEFT, pygame.K_a):
+                    level_select_choice = (level_select_choice - 2) % LEVEL_COUNT + 1
+                if event.type == pygame.KEYDOWN and event.key in (pygame.K_RIGHT, pygame.K_d):
+                    level_select_choice = level_select_choice % LEVEL_COUNT + 1
+                if event.type == pygame.KEYDOWN and event.key in (pygame.K_RETURN, pygame.K_KP_ENTER):
+                    level_number = level_select_choice
+                    walls, squirrel_x, squirrel_y, viper_x, viper_y, viper_patrol_y = reset_level(level_number)
+                    viper_direction = 1
+                    squirrel_state = "free"
+                    stasis_timer = 0.0
+                    viper_state = "active"
+                    blind_timer = 0.0
+                    facing_x, facing_y = 1, 0
+                    particles = []
                     game_state = "playing"
             elif game_state == "paused":
                 if event.type == pygame.KEYDOWN and event.key == pygame.K_q:
@@ -162,10 +191,7 @@ def main():
             elif game_state == "playing":
                 if event.type == pygame.KEYDOWN and event.key == pygame.K_n:
                     level_number = level_number % LEVEL_COUNT + 1  # wraps 10 -> 1
-                    walls, squirrel_start, viper_start = load_level(level_path(level_number))
-                    squirrel_x, squirrel_y = squirrel_start
-                    viper_x, viper_y = viper_start
-                    viper_patrol_y = viper_y
+                    walls, squirrel_x, squirrel_y, viper_x, viper_y, viper_patrol_y = reset_level(level_number)
                     viper_direction = 1
                     squirrel_state = "free"
                     stasis_timer = 0.0
@@ -314,9 +340,22 @@ def main():
             title_rect = title_surface.get_rect(center=(WINDOW_WIDTH / 2, WINDOW_HEIGHT / 2 - 40))
             screen.blit(title_surface, title_rect)
 
-            prompt_surface = font.render("Press ENTER to Play", True, TEXT_COLOR)
+            prompt_surface = font.render("Press ENTER to Play  --  L for Level Select", True, TEXT_COLOR)
             prompt_rect = prompt_surface.get_rect(center=(WINDOW_WIDTH / 2, WINDOW_HEIGHT / 2 + 40))
             screen.blit(prompt_surface, prompt_rect)
+
+        elif game_state == "level_select":
+            title_surface = title_font.render("Select Level", True, TEXT_COLOR)
+            title_rect = title_surface.get_rect(center=(WINDOW_WIDTH / 2, WINDOW_HEIGHT / 2 - 80))
+            screen.blit(title_surface, title_rect)
+
+            choice_surface = title_font.render(f"< {level_select_choice} >", True, TEXT_COLOR)
+            choice_rect = choice_surface.get_rect(center=(WINDOW_WIDTH / 2, WINDOW_HEIGHT / 2))
+            screen.blit(choice_surface, choice_rect)
+
+            hint_surface = font.render("Left/Right to choose, Enter to start, Esc to go back", True, TEXT_COLOR)
+            hint_rect = hint_surface.get_rect(center=(WINDOW_WIDTH / 2, WINDOW_HEIGHT / 2 + 80))
+            screen.blit(hint_surface, hint_rect)
 
         else:  # game_state == "playing" or "paused"
             for wall in walls:
