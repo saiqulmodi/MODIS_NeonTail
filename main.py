@@ -1,12 +1,11 @@
 """
 main.py -- MODIS_NeonTail
 
-Phase 8, Step 2: background music. pygame.mixer.music is a separate
-streaming channel from pygame.mixer.Sound, built for one long looping
-track rather than short overlapping effects -- play(loops=-1) starts it
-looping forever, pause()/unpause() freeze and resume it with the pause
-screen. The loop itself is a synthesized pentatonic arpeggio (see the
-scratchpad's generate_music.py), not downloaded audio.
+Phase 8, Step 3: taunt bubbles. Blinding V.I.P.E.R. pops a random comic
+phrase above the squirrel that drifts up and fades out, using the same
+list-of-dicts-with-an-age pattern as the dirt particles, plus
+Surface.set_alpha() (same trick the pause overlay already used) to fade
+the rendered text smoothly instead of just vanishing.
 """
 
 import json
@@ -138,6 +137,11 @@ PARTICLE_SPEED_MIN = 150
 PARTICLE_SPEED_MAX = 300
 PARTICLE_SPREAD_DEGREES = 40  # cone width the burst fans out into
 
+TAUNT_COLOR = (255, 230, 80)  # bright yellow -- reads as playful, not urgent
+TAUNT_DURATION = 1.5  # seconds a taunt bubble is shown before it's gone
+TAUNT_RISE_SPEED = 30  # pixels per second it drifts upward
+TAUNT_PHRASES = ["Nyah nyah!", "Too slow!", "Can't catch me!", "Nice try!"]
+
 
 def main():
     pygame.init()
@@ -182,6 +186,7 @@ def main():
 
     facing_x, facing_y = 1, 0  # direction the squirrel last moved/faced
     particles = []              # each particle is a dict: x, y, vx, vy, lifetime
+    taunts = []                  # each taunt is a dict: text, x, y, age
 
     running = True
     while running:
@@ -224,6 +229,7 @@ def main():
                     blind_timer = 0.0
                     facing_x, facing_y = 1, 0
                     particles = []
+                    taunts = []
                     game_state = "playing"
                     write_save(level_number, lifetime_catches)
                     pygame.mixer.music.play(loops=-1)
@@ -241,6 +247,7 @@ def main():
                     blind_timer = 0.0
                     facing_x, facing_y = 1, 0
                     particles = []
+                    taunts = []
                     write_save(level_number, lifetime_catches)
                 if event.type == pygame.KEYDOWN and event.key == pygame.K_SPACE:
                     if squirrel_state == "free":
@@ -360,6 +367,13 @@ def main():
                 particle["lifetime"] -= delta_time
             particles = [p for p in particles if p["lifetime"] > 0]
 
+            # Drift every taunt bubble upward and age it out once its
+            # display time is up.
+            for taunt in taunts:
+                taunt["y"] -= TAUNT_RISE_SPEED * delta_time
+                taunt["age"] += delta_time
+            taunts = [t for t in taunts if t["age"] < TAUNT_DURATION]
+
             # A dirt particle touching V.I.P.E.R. blinds it -- only while it
             # can currently see, so an already-blinded hit doesn't reset the timer.
             if viper_state == "active":
@@ -368,6 +382,12 @@ def main():
                         viper_state = "blinded"
                         blind_timer = VIPER_BLIND_DURATION
                         blind_sound.play()
+                        taunts.append({
+                            "text": random.choice(TAUNT_PHRASES),
+                            "x": squirrel_x + SQUIRREL_SIZE / 2,
+                            "y": squirrel_y - 20,
+                            "age": 0.0,
+                        })
                         break
 
             # Tag check -- only while free, so an already-caught squirrel
@@ -425,6 +445,13 @@ def main():
 
             for particle in particles:
                 pygame.draw.circle(screen, PARTICLE_COLOR, (int(particle["x"]), int(particle["y"])), PARTICLE_SIZE)
+
+            for taunt in taunts:
+                taunt_surface = font.render(taunt["text"], True, TAUNT_COLOR)
+                fade = max(0.0, 1.0 - taunt["age"] / TAUNT_DURATION)
+                taunt_surface.set_alpha(int(255 * fade))
+                taunt_rect = taunt_surface.get_rect(center=(taunt["x"], taunt["y"]))
+                screen.blit(taunt_surface, taunt_rect)
 
             # Score and timer, top-left corner. render() turns text into an
             # image; blit() draws that image onto the screen.
