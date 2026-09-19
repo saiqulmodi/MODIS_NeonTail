@@ -1,9 +1,10 @@
 """
 main.py -- MODIS_NeonTail
 
-Phase 7, Step 1: a scene state machine. game_state is "menu" or "playing"
--- input, update, and drawing all branch on it, so the menu screen and
-gameplay never run at the same time. Enter starts the game from the menu.
+Phase 7, Step 2: pause. game_state gains a third value, "paused" -- Escape
+now pauses/resumes gameplay instead of quitting; Q quits from the pause
+screen (Escape still quits from the main menu, since there's nothing to
+"resume" there).
 """
 
 import json
@@ -146,10 +147,18 @@ def main():
             if event.type == pygame.QUIT:
                 running = False
             if event.type == pygame.KEYDOWN and event.key == pygame.K_ESCAPE:
-                running = False
+                if game_state == "menu":
+                    running = False
+                elif game_state == "playing":
+                    game_state = "paused"
+                elif game_state == "paused":
+                    game_state = "playing"
             if game_state == "menu":
                 if event.type == pygame.KEYDOWN and event.key in (pygame.K_RETURN, pygame.K_KP_ENTER):
                     game_state = "playing"
+            elif game_state == "paused":
+                if event.type == pygame.KEYDOWN and event.key == pygame.K_q:
+                    running = False
             elif game_state == "playing":
                 if event.type == pygame.KEYDOWN and event.key == pygame.K_n:
                     level_number = level_number % LEVEL_COUNT + 1  # wraps 10 -> 1
@@ -309,7 +318,7 @@ def main():
             prompt_rect = prompt_surface.get_rect(center=(WINDOW_WIDTH / 2, WINDOW_HEIGHT / 2 + 40))
             screen.blit(prompt_surface, prompt_rect)
 
-        else:  # game_state == "playing"
+        else:  # game_state == "playing" or "paused"
             for wall in walls:
                 pygame.draw.rect(screen, TILE_WALL_COLOR, wall)
 
@@ -337,6 +346,23 @@ def main():
 
             level_surface = font.render(f"Level: {level_number}/{LEVEL_COUNT} (N to switch)", True, TEXT_COLOR)
             screen.blit(level_surface, (20, 100))
+
+            if game_state == "paused":
+                # A semi-transparent black rectangle drawn over everything
+                # else -- set_alpha() controls how see-through it is (0 =
+                # invisible, 255 = solid), so the frozen game shows through.
+                overlay = pygame.Surface((WINDOW_WIDTH, WINDOW_HEIGHT))
+                overlay.set_alpha(150)
+                overlay.fill((0, 0, 0))
+                screen.blit(overlay, (0, 0))
+
+                paused_surface = title_font.render("PAUSED", True, TEXT_COLOR)
+                paused_rect = paused_surface.get_rect(center=(WINDOW_WIDTH / 2, WINDOW_HEIGHT / 2 - 40))
+                screen.blit(paused_surface, paused_rect)
+
+                hint_surface = font.render("Esc to resume, Q to quit", True, TEXT_COLOR)
+                hint_rect = hint_surface.get_rect(center=(WINDOW_WIDTH / 2, WINDOW_HEIGHT / 2 + 40))
+                screen.blit(hint_surface, hint_rect)
 
         pygame.display.flip()
 
