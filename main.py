@@ -50,19 +50,20 @@ def level_path(level_number):
 
 
 def reset_level(level_number):
-    """Load a level's walls and start positions. Shared by the initial
-    setup, N-key switching, and the level-select screen, so the loading
-    logic only lives in one place."""
-    walls, squirrel_start, viper_start = load_level(level_path(level_number))
+    """Load a level's walls, landmines, and start positions. Shared by the
+    initial setup, N-key switching, and the level-select screen, so the
+    loading logic only lives in one place."""
+    walls, landmines, squirrel_start, viper_start = load_level(level_path(level_number))
     squirrel_x, squirrel_y = squirrel_start
     viper_x, viper_y = viper_start
     viper_patrol_y = viper_y
-    return walls, squirrel_x, squirrel_y, viper_x, viper_y, viper_patrol_y
+    return walls, landmines, squirrel_x, squirrel_y, viper_x, viper_y, viper_patrol_y
 
 
 def load_level(path):
-    """Read a level JSON file and turn its character grid into wall rects
-    and start positions. '#' = wall, 'S' = squirrel start, 'V' = V.I.P.E.R. start."""
+    """Read a level JSON file and turn its character grid into wall rects,
+    landmine rects, and start positions. '#' = wall, 'S' = squirrel start,
+    'V' = V.I.P.E.R. start, 'W' = whoopee-cushion landmine."""
     with open(path, "r", encoding="utf-8") as level_file:
         data = json.load(level_file)
 
@@ -70,6 +71,7 @@ def load_level(path):
     grid = data["grid"]
 
     walls = []
+    landmines = []
     squirrel_start = (0, 0)
     viper_start = (0, 0)
 
@@ -83,8 +85,10 @@ def load_level(path):
                 squirrel_start = (x, y)
             elif tile_char == "V":
                 viper_start = (x, y)
+            elif tile_char == "W":
+                landmines.append(pygame.Rect(x, y, tile_size, tile_size))
 
-    return walls, squirrel_start, viper_start
+    return walls, landmines, squirrel_start, viper_start
 
 
 def move_with_collision(x, y, dx, dy, size, walls):
@@ -142,6 +146,9 @@ TAUNT_DURATION = 1.5  # seconds a taunt bubble is shown before it's gone
 TAUNT_RISE_SPEED = 30  # pixels per second it drifts upward
 TAUNT_PHRASES = ["Nyah nyah!", "Too slow!", "Can't catch me!", "Nice try!"]
 
+WHOOPEE_COLOR = (230, 120, 180)  # comic pink -- distinct from every other game element
+VIPER_STUN_DURATION = 2.0  # seconds V.I.P.E.R. is fully frozen after a landmine
+
 
 def main():
     pygame.init()
@@ -154,6 +161,7 @@ def main():
     caught_sound = pygame.mixer.Sound(SOUND_DIR / "caught.wav")
     kick_sound = pygame.mixer.Sound(SOUND_DIR / "kick.wav")
     blind_sound = pygame.mixer.Sound(SOUND_DIR / "blind.wav")
+    landmine_sound = pygame.mixer.Sound(SOUND_DIR / "landmine.wav")
 
     pygame.mixer.music.load(MUSIC_PATH)
     pygame.mixer.music.set_volume(0.4)  # quieter than the sound effects
@@ -166,7 +174,7 @@ def main():
 
     level_number = save_data["last_level"]
     level_select_choice = level_number  # which level is highlighted on the select screen
-    walls, squirrel_x, squirrel_y, viper_x, viper_y, viper_patrol_y = reset_level(level_number)
+    walls, landmines, squirrel_x, squirrel_y, viper_x, viper_y, viper_patrol_y = reset_level(level_number)
     animation_timer = 0.0
 
     # squirrel_state is "free" (normal play) or "stasis" (caught, frozen
@@ -180,6 +188,7 @@ def main():
     # (dirt hit it -- just patrols obliviously until blind_timer runs out).
     viper_state = "active"
     blind_timer = 0.0
+    stun_timer = 0.0
 
     score = 0            # how many times you've been caught
     game_time = 0.0       # total seconds played, counts up
@@ -221,12 +230,13 @@ def main():
                     level_select_choice = level_select_choice % LEVEL_COUNT + 1
                 if event.type == pygame.KEYDOWN and event.key in (pygame.K_RETURN, pygame.K_KP_ENTER):
                     level_number = level_select_choice
-                    walls, squirrel_x, squirrel_y, viper_x, viper_y, viper_patrol_y = reset_level(level_number)
+                    walls, landmines, squirrel_x, squirrel_y, viper_x, viper_y, viper_patrol_y = reset_level(level_number)
                     viper_direction = 1
                     squirrel_state = "free"
                     stasis_timer = 0.0
                     viper_state = "active"
                     blind_timer = 0.0
+                    stun_timer = 0.0
                     facing_x, facing_y = 1, 0
                     particles = []
                     taunts = []
@@ -239,12 +249,13 @@ def main():
             elif game_state == "playing":
                 if event.type == pygame.KEYDOWN and event.key == pygame.K_n:
                     level_number = level_number % LEVEL_COUNT + 1  # wraps 10 -> 1
-                    walls, squirrel_x, squirrel_y, viper_x, viper_y, viper_patrol_y = reset_level(level_number)
+                    walls, landmines, squirrel_x, squirrel_y, viper_x, viper_y, viper_patrol_y = reset_level(level_number)
                     viper_direction = 1
                     squirrel_state = "free"
                     stasis_timer = 0.0
                     viper_state = "active"
                     blind_timer = 0.0
+                    stun_timer = 0.0
                     facing_x, facing_y = 1, 0
                     particles = []
                     taunts = []
@@ -322,7 +333,16 @@ def main():
                 if blind_timer <= 0:
                     viper_state = "active"
 
-            if squirrel_state == "free" and viper_state == "active":
+            # V.I.P.E.R. stunned countdown -- a landmine freezes it completely,
+            # so unlike blinded it doesn't even patrol until this runs out.
+            if viper_state == "stunned":
+                stun_timer -= delta_time
+                if stun_timer <= 0:
+                    viper_state = "active"
+
+            if viper_state == "stunned":
+                pass  # frozen in place -- no movement at all
+            elif squirrel_state == "free" and viper_state == "active":
                 # Distance from V.I.P.E.R. to the squirrel, using each one's
                 # center point -- the classic way an AI "notices" a target.
                 dx = (squirrel_x + SQUIRREL_SIZE / 2) - (viper_x + VIPER_SIZE / 2)
@@ -359,6 +379,17 @@ def main():
             viper_x = max(0, min(WINDOW_WIDTH - VIPER_SIZE, viper_x))
             viper_y = max(0, min(WINDOW_HEIGHT - VIPER_SIZE, viper_y))
             viper_rect = pygame.Rect(viper_x, viper_y, VIPER_SIZE, VIPER_SIZE)
+
+            # Stepping on a landmine stuns V.I.P.E.R. and uses the landmine
+            # up -- only while active, so it can't be re-triggered or
+            # stacked with blinded/stunned.
+            if viper_state == "active":
+                hit_landmine = viper_rect.collidelist(landmines)
+                if hit_landmine != -1:
+                    del landmines[hit_landmine]
+                    viper_state = "stunned"
+                    stun_timer = VIPER_STUN_DURATION
+                    landmine_sound.play()
 
             # Advance every particle and drop the ones whose lifetime ran out.
             for particle in particles:
@@ -434,13 +465,21 @@ def main():
             for wall in walls:
                 pygame.draw.rect(screen, TILE_WALL_COLOR, wall)
 
+            for landmine in landmines:
+                pygame.draw.circle(screen, WHOOPEE_COLOR, landmine.center, landmine.width // 3)
+
             if squirrel_state == "stasis":
                 bubble_center = (int(squirrel_x + SQUIRREL_SIZE / 2), int(squirrel_y + SQUIRREL_SIZE / 2))
                 pygame.draw.circle(screen, STASIS_BUBBLE_COLOR, bubble_center, SQUIRREL_SIZE)
             else:
                 pygame.draw.rect(screen, SQUIRREL_COLOR, squirrel_rect)
 
-            viper_color = VIPER_BLINDED_COLOR if viper_state == "blinded" else VIPER_COLOR
+            if viper_state == "blinded":
+                viper_color = VIPER_BLINDED_COLOR
+            elif viper_state == "stunned":
+                viper_color = WHOOPEE_COLOR
+            else:
+                viper_color = VIPER_COLOR
             pygame.draw.rect(screen, viper_color, viper_rect)
 
             for particle in particles:
