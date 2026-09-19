@@ -1,11 +1,13 @@
 """
 main.py -- MODIS_NeonTail
 
-Phase 4, Step 2: on-screen score (how many times you've been caught) and
-a running game timer, drawn with pygame's font system.
+Phase 5, Step 1: dirt kick particle system. Press Space to kick a burst
+of dirt particles in the direction the squirrel is facing -- visual only
+for now, no gameplay effect yet.
 """
 
 import math
+import random
 import pygame
 
 WINDOW_WIDTH = 1024
@@ -35,6 +37,14 @@ VIPER_PATROL_Y = 100
 STASIS_DURATION = 3.0  # seconds spent in the stasis bubble after being caught
 STASIS_BUBBLE_COLOR = (200, 230, 255)  # pale icy-blue bubble
 
+PARTICLE_COLOR = (139, 90, 43)  # dirt brown
+PARTICLE_SIZE = 4
+PARTICLE_COUNT = 10        # particles spawned per kick
+PARTICLE_LIFETIME = 0.4    # seconds each particle lives
+PARTICLE_SPEED_MIN = 150
+PARTICLE_SPEED_MAX = 300
+PARTICLE_SPREAD_DEGREES = 40  # cone width the burst fans out into
+
 
 def main():
     pygame.init()
@@ -59,6 +69,9 @@ def main():
     score = 0            # how many times you've been caught
     game_time = 0.0       # total seconds played, counts up
 
+    facing_x, facing_y = 1, 0  # direction the squirrel last moved/faced
+    particles = []              # each particle is a dict: x, y, vx, vy, lifetime
+
     running = True
     while running:
         delta_time = clock.tick(FPS) / 1000
@@ -70,6 +83,22 @@ def main():
                 running = False
             if event.type == pygame.KEYDOWN and event.key == pygame.K_ESCAPE:
                 running = False
+            if event.type == pygame.KEYDOWN and event.key == pygame.K_SPACE:
+                if squirrel_state == "free":
+                    base_angle = math.atan2(facing_y, facing_x)
+                    spread = math.radians(PARTICLE_SPREAD_DEGREES)
+                    kick_x = squirrel_x + SQUIRREL_SIZE / 2
+                    kick_y = squirrel_y + SQUIRREL_SIZE / 2
+                    for _ in range(PARTICLE_COUNT):
+                        angle = base_angle + random.uniform(-spread / 2, spread / 2)
+                        speed = random.uniform(PARTICLE_SPEED_MIN, PARTICLE_SPEED_MAX)
+                        particles.append({
+                            "x": kick_x,
+                            "y": kick_y,
+                            "vx": math.cos(angle) * speed,
+                            "vy": math.sin(angle) * speed,
+                            "lifetime": PARTICLE_LIFETIME,
+                        })
 
         keys = pygame.key.get_pressed()
         is_moving = False
@@ -79,15 +108,19 @@ def main():
             if keys[pygame.K_LEFT] or keys[pygame.K_a]:
                 squirrel_x -= SQUIRREL_SPEED * delta_time
                 is_moving = True
+                facing_x, facing_y = -1, 0
             if keys[pygame.K_RIGHT] or keys[pygame.K_d]:
                 squirrel_x += SQUIRREL_SPEED * delta_time
                 is_moving = True
+                facing_x, facing_y = 1, 0
             if keys[pygame.K_UP] or keys[pygame.K_w]:
                 squirrel_y -= SQUIRREL_SPEED * delta_time
                 is_moving = True
+                facing_x, facing_y = 0, -1
             if keys[pygame.K_DOWN] or keys[pygame.K_s]:
                 squirrel_y += SQUIRREL_SPEED * delta_time
                 is_moving = True
+                facing_x, facing_y = 0, 1
 
         # 2. Update game state
         squirrel_x = max(0, min(WINDOW_WIDTH - SQUIRREL_SIZE, squirrel_x))
@@ -141,6 +174,13 @@ def main():
         viper_y = max(0, min(WINDOW_HEIGHT - VIPER_SIZE, viper_y))
         viper_rect = pygame.Rect(viper_x, viper_y, VIPER_SIZE, VIPER_SIZE)
 
+        # Advance every particle and drop the ones whose lifetime ran out.
+        for particle in particles:
+            particle["x"] += particle["vx"] * delta_time
+            particle["y"] += particle["vy"] * delta_time
+            particle["lifetime"] -= delta_time
+        particles = [p for p in particles if p["lifetime"] > 0]
+
         # Tag check -- only while free, so an already-caught squirrel
         # can't be "caught again" mid-bubble.
         if squirrel_state == "free" and squirrel_rect.colliderect(viper_rect):
@@ -158,6 +198,9 @@ def main():
             pygame.draw.rect(screen, SQUIRREL_COLOR, squirrel_rect)
 
         pygame.draw.rect(screen, VIPER_COLOR, viper_rect)
+
+        for particle in particles:
+            pygame.draw.circle(screen, PARTICLE_COLOR, (int(particle["x"]), int(particle["y"])), PARTICLE_SIZE)
 
         # Score and timer, top-left corner. render() turns text into an
         # image; blit() draws that image onto the screen.
