@@ -1,10 +1,12 @@
 """
 main.py -- MODIS_NeonTail
 
-Phase 10, Step 1: predictive AI. V.I.P.E.R. now aims PREDICTION_TIME
-seconds ahead of the squirrel's current velocity instead of its exact
-position -- a simple, believable stand-in for real pathfinding, which
-wouldn't fit this game's continuous pixel movement (no grid to run A* on).
+Phase 10, Step 2: time bubbles. A new "B" tile zone drastically slows
+V.I.P.E.R. while it's standing inside one. load_level()/reset_level()
+were refactored to return a dict instead of a growing positional tuple,
+so adding this (and future) per-level lists doesn't touch every call
+site's unpacking order -- the exact kind of mismatch that caused the
+VIPER_PATROL_Y bug back in Phase 6.
 """
 
 import json
@@ -49,52 +51,60 @@ def level_path(level_number):
 
 
 def reset_level(level_number):
-    """Load a level's walls, landmines, jump-pads, shields, and start
-    positions. Shared by the initial setup, N-key switching, and the
-    level-select screen, so the loading logic only lives in one place."""
-    walls, landmines, jump_pads, shields, squirrel_start, viper_start = load_level(level_path(level_number))
-    squirrel_x, squirrel_y = squirrel_start
-    viper_x, viper_y = viper_start
-    viper_patrol_y = viper_y
-    return walls, landmines, jump_pads, shields, squirrel_x, squirrel_y, viper_x, viper_y, viper_patrol_y
+    """Load a level and add the derived viper_patrol_y field. Shared by
+    the initial setup, N-key switching, and the level-select screen, so
+    the loading logic only lives in one place. Returns a dict -- see
+    load_level() for the keys -- rather than a long positional tuple, so
+    adding another per-level list later doesn't require touching every
+    call site's unpacking order."""
+    level = load_level(level_path(level_number))
+    level["viper_patrol_y"] = level["viper_start"][1]
+    return level
 
 
 def load_level(path):
-    """Read a level JSON file and turn its character grid into wall rects,
-    landmine rects, jump-pad rects, shield rects, and start positions.
-    '#' = wall, 'S' = squirrel start, 'V' = V.I.P.E.R. start,
-    'W' = whoopee-cushion landmine, 'J' = jump-pad, 'H' = shield pickup."""
+    """Read a level JSON file and turn its character grid into a dict:
+    walls, landmines, jump_pads, shields, time_bubbles (lists of
+    pygame.Rect) and squirrel_start, viper_start ((x, y) tuples). Tile
+    characters: '#' = wall, 'S' = squirrel start, 'V' = V.I.P.E.R. start,
+    'W' = whoopee-cushion landmine, 'J' = jump-pad, 'H' = shield pickup,
+    'B' = time bubble."""
     with open(path, "r", encoding="utf-8") as level_file:
         data = json.load(level_file)
 
     tile_size = data["tile_size"]
     grid = data["grid"]
 
-    walls = []
-    landmines = []
-    jump_pads = []
-    shields = []
-    squirrel_start = (0, 0)
-    viper_start = (0, 0)
+    level = {
+        "walls": [],
+        "landmines": [],
+        "jump_pads": [],
+        "shields": [],
+        "time_bubbles": [],
+        "squirrel_start": (0, 0),
+        "viper_start": (0, 0),
+    }
 
     for row_index, row in enumerate(grid):
         for col_index, tile_char in enumerate(row):
             x = col_index * tile_size
             y = row_index * tile_size
             if tile_char == "#":
-                walls.append(pygame.Rect(x, y, tile_size, tile_size))
+                level["walls"].append(pygame.Rect(x, y, tile_size, tile_size))
             elif tile_char == "S":
-                squirrel_start = (x, y)
+                level["squirrel_start"] = (x, y)
             elif tile_char == "V":
-                viper_start = (x, y)
+                level["viper_start"] = (x, y)
             elif tile_char == "W":
-                landmines.append(pygame.Rect(x, y, tile_size, tile_size))
+                level["landmines"].append(pygame.Rect(x, y, tile_size, tile_size))
             elif tile_char == "J":
-                jump_pads.append(pygame.Rect(x, y, tile_size, tile_size))
+                level["jump_pads"].append(pygame.Rect(x, y, tile_size, tile_size))
             elif tile_char == "H":
-                shields.append(pygame.Rect(x, y, tile_size, tile_size))
+                level["shields"].append(pygame.Rect(x, y, tile_size, tile_size))
+            elif tile_char == "B":
+                level["time_bubbles"].append(pygame.Rect(x, y, tile_size, tile_size))
 
-    return walls, landmines, jump_pads, shields, squirrel_start, viper_start
+    return level
 
 
 def move_with_collision(x, y, dx, dy, size, walls):
@@ -168,6 +178,9 @@ INVULNERABLE_DURATION = 1.5  # seconds of safety right after a shield absorbs a 
 
 PREDICTION_TIME = 0.3  # seconds V.I.P.E.R. aims ahead of the squirrel's current heading
 
+TIME_BUBBLE_COLOR = (150, 110, 230)  # violet -- reads as a distortion field
+TIME_BUBBLE_SLOW_FACTOR = 0.3  # V.I.P.E.R.'s speed while inside a bubble
+
 
 def main():
     pygame.init()
@@ -193,7 +206,15 @@ def main():
 
     level_number = save_data["last_level"]
     level_select_choice = level_number  # which level is highlighted on the select screen
-    walls, landmines, jump_pads, shields, squirrel_x, squirrel_y, viper_x, viper_y, viper_patrol_y = reset_level(level_number)
+    level = reset_level(level_number)
+    walls = level["walls"]
+    landmines = level["landmines"]
+    jump_pads = level["jump_pads"]
+    shields = level["shields"]
+    time_bubbles = level["time_bubbles"]
+    squirrel_x, squirrel_y = level["squirrel_start"]
+    viper_x, viper_y = level["viper_start"]
+    viper_patrol_y = level["viper_patrol_y"]
     jump_cooldown_timer = 0.0
     has_shield = False
     invulnerable_timer = 0.0
@@ -254,7 +275,15 @@ def main():
                     level_select_choice = level_select_choice % LEVEL_COUNT + 1
                 if event.type == pygame.KEYDOWN and event.key in (pygame.K_RETURN, pygame.K_KP_ENTER):
                     level_number = level_select_choice
-                    walls, landmines, jump_pads, shields, squirrel_x, squirrel_y, viper_x, viper_y, viper_patrol_y = reset_level(level_number)
+                    level = reset_level(level_number)
+                    walls = level["walls"]
+                    landmines = level["landmines"]
+                    jump_pads = level["jump_pads"]
+                    shields = level["shields"]
+                    time_bubbles = level["time_bubbles"]
+                    squirrel_x, squirrel_y = level["squirrel_start"]
+                    viper_x, viper_y = level["viper_start"]
+                    viper_patrol_y = level["viper_patrol_y"]
                     viper_direction = 1
                     squirrel_state = "free"
                     stasis_timer = 0.0
@@ -278,7 +307,15 @@ def main():
             elif game_state == "playing":
                 if event.type == pygame.KEYDOWN and event.key == pygame.K_n:
                     level_number = level_number % LEVEL_COUNT + 1  # wraps 10 -> 1
-                    walls, landmines, jump_pads, shields, squirrel_x, squirrel_y, viper_x, viper_y, viper_patrol_y = reset_level(level_number)
+                    level = reset_level(level_number)
+                    walls = level["walls"]
+                    landmines = level["landmines"]
+                    jump_pads = level["jump_pads"]
+                    shields = level["shields"]
+                    time_bubbles = level["time_bubbles"]
+                    squirrel_x, squirrel_y = level["squirrel_start"]
+                    viper_x, viper_y = level["viper_start"]
+                    viper_patrol_y = level["viper_patrol_y"]
                     viper_direction = 1
                     squirrel_state = "free"
                     stasis_timer = 0.0
@@ -426,6 +463,12 @@ def main():
                 if decoy["timer"] <= 0:
                     decoy = None
 
+            # Time bubbles slow V.I.P.E.R. drastically while it's inside one
+            # -- checked against its position entering this frame, before
+            # any of this frame's own movement is applied.
+            in_time_bubble = pygame.Rect(viper_x, viper_y, VIPER_SIZE, VIPER_SIZE).collidelist(time_bubbles) != -1
+            viper_speed_multiplier = TIME_BUBBLE_SLOW_FACTOR if in_time_bubble else 1.0
+
             if viper_state == "stunned":
                 pass  # frozen in place -- no movement at all
             elif squirrel_state == "free" and viper_state == "active":
@@ -461,12 +504,12 @@ def main():
                     target_distance = math.hypot(dx, dy)
 
                     if target_distance > 0:
-                        chase_dx = (dx / target_distance) * VIPER_CHASE_SPEED * delta_time
-                        chase_dy = (dy / target_distance) * VIPER_CHASE_SPEED * delta_time
+                        chase_dx = (dx / target_distance) * VIPER_CHASE_SPEED * viper_speed_multiplier * delta_time
+                        chase_dy = (dy / target_distance) * VIPER_CHASE_SPEED * viper_speed_multiplier * delta_time
                         viper_x, viper_y = move_with_collision(viper_x, viper_y, chase_dx, chase_dy, VIPER_SIZE, walls)
                 else:
                     viper_y = viper_patrol_y
-                    patrol_dx = VIPER_PATROL_SPEED * viper_direction * delta_time
+                    patrol_dx = VIPER_PATROL_SPEED * viper_direction * viper_speed_multiplier * delta_time
                     viper_x, viper_y = move_with_collision(viper_x, viper_y, patrol_dx, 0, VIPER_SIZE, walls)
                     if viper_x <= VIPER_PATROL_LEFT:
                         viper_x = VIPER_PATROL_LEFT
@@ -478,7 +521,7 @@ def main():
                 # Squirrel in stasis, or V.I.P.E.R. blinded -- either way there's
                 # nothing to chase right now, so just patrol.
                 viper_y = viper_patrol_y
-                patrol_dx = VIPER_PATROL_SPEED * viper_direction * delta_time
+                patrol_dx = VIPER_PATROL_SPEED * viper_direction * viper_speed_multiplier * delta_time
                 viper_x, viper_y = move_with_collision(viper_x, viper_y, patrol_dx, 0, VIPER_SIZE, walls)
                 if viper_x <= VIPER_PATROL_LEFT:
                     viper_x = VIPER_PATROL_LEFT
@@ -597,6 +640,9 @@ def main():
 
             for shield in shields:
                 pygame.draw.circle(screen, SHIELD_COLOR, shield.center, shield.width // 3, width=4)
+
+            for bubble in time_bubbles:
+                pygame.draw.circle(screen, TIME_BUBBLE_COLOR, bubble.center, bubble.width // 2, width=3)
 
             if decoy is not None:
                 decoy_rect = pygame.Rect(0, 0, SQUIRREL_SIZE, SQUIRREL_SIZE)
