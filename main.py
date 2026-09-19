@@ -1,10 +1,10 @@
 """
 main.py -- MODIS_NeonTail
 
-Phase 9, Step 4: shields. A new "H" tile is a one-time pickup; the next
-time V.I.P.E.R. would catch the squirrel while it's carrying one, the
-shield is consumed instead of a real catch -- a brief invulnerability
-window follows so the same collision can't immediately catch you again.
+Phase 10, Step 1: predictive AI. V.I.P.E.R. now aims PREDICTION_TIME
+seconds ahead of the squirrel's current velocity instead of its exact
+position -- a simple, believable stand-in for real pathfinding, which
+wouldn't fit this game's continuous pixel movement (no grid to run A* on).
 """
 
 import json
@@ -165,6 +165,8 @@ TAG_DURATION = 4.0  # seconds V.I.P.E.R. stays locked on after losing direct ran
 
 SHIELD_COLOR = (80, 220, 120)  # protective green -- reads as "power-up"
 INVULNERABLE_DURATION = 1.5  # seconds of safety right after a shield absorbs a catch
+
+PREDICTION_TIME = 0.3  # seconds V.I.P.E.R. aims ahead of the squirrel's current heading
 
 
 def main():
@@ -345,6 +347,12 @@ def main():
                     is_moving = True
                     facing_x, facing_y = 0, 1
 
+            # Recover actual pixels-per-second velocity from this frame's
+            # already-delta_time-scaled movement -- V.I.P.E.R. uses this to
+            # predict where the squirrel is heading, not just where it is.
+            squirrel_velocity_x = move_dx / delta_time if delta_time > 0 else 0
+            squirrel_velocity_y = move_dy / delta_time if delta_time > 0 else 0
+
             squirrel_x, squirrel_y = move_with_collision(
                 squirrel_x, squirrel_y, move_dx, move_dy, SQUIRREL_SIZE, walls
             )
@@ -438,9 +446,11 @@ def main():
                 if distance_to_squirrel <= VIPER_DETECTION_RANGE or tag_timer > 0:
                     # What V.I.P.E.R. is trying to reach: a decoy takes
                     # priority over the real squirrel if V.I.P.E.R. is close
-                    # enough to it to notice -- otherwise it's the squirrel.
-                    target_x = squirrel_x + SQUIRREL_SIZE / 2
-                    target_y = squirrel_y + SQUIRREL_SIZE / 2
+                    # enough to it to notice -- otherwise it aims a little
+                    # ahead of the squirrel's current heading, not straight
+                    # at it, which is what makes the chase feel smarter.
+                    target_x = squirrel_x + SQUIRREL_SIZE / 2 + squirrel_velocity_x * PREDICTION_TIME
+                    target_y = squirrel_y + SQUIRREL_SIZE / 2 + squirrel_velocity_y * PREDICTION_TIME
                     if decoy is not None:
                         decoy_distance = math.hypot(decoy["x"] - (viper_x + VIPER_SIZE / 2), decoy["y"] - (viper_y + VIPER_SIZE / 2))
                         if decoy_distance <= VIPER_DETECTION_RANGE:
