@@ -1,11 +1,11 @@
 """
 main.py -- MODIS_NeonTail
 
-Phase 8, Step 3: taunt bubbles. Blinding V.I.P.E.R. pops a random comic
-phrase above the squirrel that drifts up and fades out, using the same
-list-of-dicts-with-an-age pattern as the dirt particles, plus
-Surface.set_alpha() (same trick the pause overlay already used) to fade
-the rendered text smoothly instead of just vanishing.
+Phase 9, Step 1: jump-pads. A new "J" tile launches the squirrel a fixed
+distance in whichever direction it's currently facing when stepped on
+(still blocked by walls, same as normal movement), for quick traversal
+across gaps and rooms. Unlike landmines, jump-pads are reusable -- a
+short cooldown after each launch just stops it firing twice in one step.
 """
 
 import json
@@ -50,20 +50,21 @@ def level_path(level_number):
 
 
 def reset_level(level_number):
-    """Load a level's walls, landmines, and start positions. Shared by the
-    initial setup, N-key switching, and the level-select screen, so the
-    loading logic only lives in one place."""
-    walls, landmines, squirrel_start, viper_start = load_level(level_path(level_number))
+    """Load a level's walls, landmines, jump-pads, and start positions.
+    Shared by the initial setup, N-key switching, and the level-select
+    screen, so the loading logic only lives in one place."""
+    walls, landmines, jump_pads, squirrel_start, viper_start = load_level(level_path(level_number))
     squirrel_x, squirrel_y = squirrel_start
     viper_x, viper_y = viper_start
     viper_patrol_y = viper_y
-    return walls, landmines, squirrel_x, squirrel_y, viper_x, viper_y, viper_patrol_y
+    return walls, landmines, jump_pads, squirrel_x, squirrel_y, viper_x, viper_y, viper_patrol_y
 
 
 def load_level(path):
     """Read a level JSON file and turn its character grid into wall rects,
-    landmine rects, and start positions. '#' = wall, 'S' = squirrel start,
-    'V' = V.I.P.E.R. start, 'W' = whoopee-cushion landmine."""
+    landmine rects, jump-pad rects, and start positions. '#' = wall,
+    'S' = squirrel start, 'V' = V.I.P.E.R. start, 'W' = whoopee-cushion
+    landmine, 'J' = jump-pad."""
     with open(path, "r", encoding="utf-8") as level_file:
         data = json.load(level_file)
 
@@ -72,6 +73,7 @@ def load_level(path):
 
     walls = []
     landmines = []
+    jump_pads = []
     squirrel_start = (0, 0)
     viper_start = (0, 0)
 
@@ -87,8 +89,10 @@ def load_level(path):
                 viper_start = (x, y)
             elif tile_char == "W":
                 landmines.append(pygame.Rect(x, y, tile_size, tile_size))
+            elif tile_char == "J":
+                jump_pads.append(pygame.Rect(x, y, tile_size, tile_size))
 
-    return walls, landmines, squirrel_start, viper_start
+    return walls, landmines, jump_pads, squirrel_start, viper_start
 
 
 def move_with_collision(x, y, dx, dy, size, walls):
@@ -149,6 +153,10 @@ TAUNT_PHRASES = ["Nyah nyah!", "Too slow!", "Can't catch me!", "Nice try!"]
 WHOOPEE_COLOR = (230, 120, 180)  # comic pink -- distinct from every other game element
 VIPER_STUN_DURATION = 2.0  # seconds V.I.P.E.R. is fully frozen after a landmine
 
+JUMP_PAD_COLOR = (255, 215, 0)  # gold -- reads as "special", distinct from everything else
+JUMP_DISTANCE = 150  # pixels the squirrel is launched, more than one tile wide
+JUMP_COOLDOWN = 0.4  # seconds after a launch before the pad can fire again
+
 
 def main():
     pygame.init()
@@ -174,7 +182,8 @@ def main():
 
     level_number = save_data["last_level"]
     level_select_choice = level_number  # which level is highlighted on the select screen
-    walls, landmines, squirrel_x, squirrel_y, viper_x, viper_y, viper_patrol_y = reset_level(level_number)
+    walls, landmines, jump_pads, squirrel_x, squirrel_y, viper_x, viper_y, viper_patrol_y = reset_level(level_number)
+    jump_cooldown_timer = 0.0
     animation_timer = 0.0
 
     # squirrel_state is "free" (normal play) or "stasis" (caught, frozen
@@ -230,13 +239,14 @@ def main():
                     level_select_choice = level_select_choice % LEVEL_COUNT + 1
                 if event.type == pygame.KEYDOWN and event.key in (pygame.K_RETURN, pygame.K_KP_ENTER):
                     level_number = level_select_choice
-                    walls, landmines, squirrel_x, squirrel_y, viper_x, viper_y, viper_patrol_y = reset_level(level_number)
+                    walls, landmines, jump_pads, squirrel_x, squirrel_y, viper_x, viper_y, viper_patrol_y = reset_level(level_number)
                     viper_direction = 1
                     squirrel_state = "free"
                     stasis_timer = 0.0
                     viper_state = "active"
                     blind_timer = 0.0
                     stun_timer = 0.0
+                    jump_cooldown_timer = 0.0
                     facing_x, facing_y = 1, 0
                     particles = []
                     taunts = []
@@ -249,13 +259,14 @@ def main():
             elif game_state == "playing":
                 if event.type == pygame.KEYDOWN and event.key == pygame.K_n:
                     level_number = level_number % LEVEL_COUNT + 1  # wraps 10 -> 1
-                    walls, landmines, squirrel_x, squirrel_y, viper_x, viper_y, viper_patrol_y = reset_level(level_number)
+                    walls, landmines, jump_pads, squirrel_x, squirrel_y, viper_x, viper_y, viper_patrol_y = reset_level(level_number)
                     viper_direction = 1
                     squirrel_state = "free"
                     stasis_timer = 0.0
                     viper_state = "active"
                     blind_timer = 0.0
                     stun_timer = 0.0
+                    jump_cooldown_timer = 0.0
                     facing_x, facing_y = 1, 0
                     particles = []
                     taunts = []
@@ -318,6 +329,26 @@ def main():
                 animation_timer = 0.0
             bounce = abs(math.sin(animation_timer * ANIMATION_SPEED)) * BOUNCE_HEIGHT
             squirrel_rect = pygame.Rect(squirrel_x, squirrel_y - bounce, SQUIRREL_SIZE, SQUIRREL_SIZE)
+
+            # Jump-pads launch the squirrel in its current facing direction.
+            # Reusable (unlike landmines), so a short cooldown -- not removal
+            # from the list -- is what stops one firing every single frame
+            # while the squirrel is still standing on it.
+            jump_cooldown_timer -= delta_time
+            if (
+                squirrel_state == "free"
+                and jump_cooldown_timer <= 0
+                and squirrel_rect.collidelist(jump_pads) != -1
+            ):
+                launch_dx = facing_x * JUMP_DISTANCE
+                launch_dy = facing_y * JUMP_DISTANCE
+                squirrel_x, squirrel_y = move_with_collision(
+                    squirrel_x, squirrel_y, launch_dx, launch_dy, SQUIRREL_SIZE, walls
+                )
+                squirrel_x = max(0, min(WINDOW_WIDTH - SQUIRREL_SIZE, squirrel_x))
+                squirrel_y = max(0, min(WINDOW_HEIGHT - SQUIRREL_SIZE, squirrel_y))
+                squirrel_rect = pygame.Rect(squirrel_x, squirrel_y - bounce, SQUIRREL_SIZE, SQUIRREL_SIZE)
+                jump_cooldown_timer = JUMP_COOLDOWN
 
             # Squirrel stasis countdown -- independent of what V.I.P.E.R. is doing.
             if squirrel_state == "stasis":
@@ -467,6 +498,12 @@ def main():
 
             for landmine in landmines:
                 pygame.draw.circle(screen, WHOOPEE_COLOR, landmine.center, landmine.width // 3)
+
+            for pad in jump_pads:
+                cx, cy = pad.center
+                half = pad.width // 2 - 6
+                diamond_points = [(cx, cy - half), (cx + half, cy), (cx, cy + half), (cx - half, cy)]
+                pygame.draw.polygon(screen, JUMP_PAD_COLOR, diamond_points)
 
             if squirrel_state == "stasis":
                 bubble_center = (int(squirrel_x + SQUIRREL_SIZE / 2), int(squirrel_y + SQUIRREL_SIZE / 2))
