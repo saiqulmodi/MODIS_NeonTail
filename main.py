@@ -1,10 +1,9 @@
 """
 main.py -- MODIS_NeonTail
 
-Phase 6, Step 1: tile-map level loader. Reads levels/level_001.json --
-a grid of characters describing walls and start positions -- and builds
-the level from it instead of hardcoding everything. Walls are drawn but
-don't block movement yet.
+Phase 6, Step 3: levels 1-10 now exist as separate JSON files, and
+pressing N loads the next one (wrapping back to level 1 after 10) --
+proving the loader from Step 1 is generic, not wired to a single file.
 """
 
 import json
@@ -15,8 +14,12 @@ from pathlib import Path
 import pygame
 
 LEVEL_DIR = Path(__file__).parent / "levels"
-LEVEL_PATH = LEVEL_DIR / "level_001.json"
+LEVEL_COUNT = 10  # level_001.json through level_010.json
 TILE_WALL_COLOR = (60, 60, 90)  # dark slate -- reads as "structure", not floor
+
+
+def level_path(level_number):
+    return LEVEL_DIR / f"level_{level_number:03d}.json"
 
 
 def load_level(path):
@@ -104,7 +107,8 @@ def main():
     clock = pygame.time.Clock()
     font = pygame.font.SysFont(None, 36)  # None = pygame's default built-in font
 
-    walls, squirrel_start, viper_start = load_level(LEVEL_PATH)
+    level_number = 1
+    walls, squirrel_start, viper_start = load_level(level_path(level_number))
 
     squirrel_x, squirrel_y = squirrel_start
     animation_timer = 0.0
@@ -140,6 +144,19 @@ def main():
                 running = False
             if event.type == pygame.KEYDOWN and event.key == pygame.K_ESCAPE:
                 running = False
+            if event.type == pygame.KEYDOWN and event.key == pygame.K_n:
+                level_number = level_number % LEVEL_COUNT + 1  # wraps 10 -> 1
+                walls, squirrel_start, viper_start = load_level(level_path(level_number))
+                squirrel_x, squirrel_y = squirrel_start
+                viper_x, viper_y = viper_start
+                viper_patrol_y = viper_y
+                viper_direction = 1
+                squirrel_state = "free"
+                stasis_timer = 0.0
+                viper_state = "active"
+                blind_timer = 0.0
+                facing_x, facing_y = 1, 0
+                particles = []
             if event.type == pygame.KEYDOWN and event.key == pygame.K_SPACE:
                 if squirrel_state == "free":
                     base_angle = math.atan2(facing_y, facing_x)
@@ -297,6 +314,9 @@ def main():
         seconds = int(game_time % 60)
         timer_surface = font.render(f"Time: {minutes:02d}:{seconds:02d}", True, TEXT_COLOR)
         screen.blit(timer_surface, (20, 60))
+
+        level_surface = font.render(f"Level: {level_number}/{LEVEL_COUNT} (N to switch)", True, TEXT_COLOR)
+        screen.blit(level_surface, (20, 100))
 
         pygame.display.flip()
 
