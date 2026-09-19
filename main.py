@@ -1,11 +1,12 @@
 """
 main.py -- MODIS_NeonTail
 
-Phase 8, Step 1: sound effects. pygame.mixer.Sound loads a short .wav
-once at startup; calling .play() on it fires the sound without blocking
-the game loop, so effects can overlap freely. All three sounds were
-synthesized from scratch (see the scratchpad's generate_sounds.py), not
-downloaded, to keep with the project's free/self-generated assets rule.
+Phase 8, Step 2: background music. pygame.mixer.music is a separate
+streaming channel from pygame.mixer.Sound, built for one long looping
+track rather than short overlapping effects -- play(loops=-1) starts it
+looping forever, pause()/unpause() freeze and resume it with the pause
+screen. The loop itself is a synthesized pentatonic arpeggio (see the
+scratchpad's generate_music.py), not downloaded audio.
 """
 
 import json
@@ -19,6 +20,7 @@ LEVEL_DIR = Path(__file__).parent / "levels"
 LEVEL_COUNT = 10  # level_001.json through level_010.json
 SAVE_PATH = Path(__file__).parent / "save.json"
 SOUND_DIR = Path(__file__).parent / "assets" / "sounds"
+MUSIC_PATH = Path(__file__).parent / "assets" / "music" / "theme.wav"
 TILE_WALL_COLOR = (60, 60, 90)  # dark slate -- reads as "structure", not floor
 
 
@@ -149,6 +151,9 @@ def main():
     kick_sound = pygame.mixer.Sound(SOUND_DIR / "kick.wav")
     blind_sound = pygame.mixer.Sound(SOUND_DIR / "blind.wav")
 
+    pygame.mixer.music.load(MUSIC_PATH)
+    pygame.mixer.music.set_volume(0.4)  # quieter than the sound effects
+
     # game_state is "menu" (title screen) or "playing" (gameplay running).
     game_state = "menu"
 
@@ -191,13 +196,16 @@ def main():
                     running = False
                 elif game_state == "playing":
                     game_state = "paused"
+                    pygame.mixer.music.pause()
                 elif game_state == "paused":
                     game_state = "playing"
+                    pygame.mixer.music.unpause()
                 elif game_state == "level_select":
                     game_state = "menu"
             if game_state == "menu":
                 if event.type == pygame.KEYDOWN and event.key in (pygame.K_RETURN, pygame.K_KP_ENTER):
                     game_state = "playing"
+                    pygame.mixer.music.play(loops=-1)
                 if event.type == pygame.KEYDOWN and event.key == pygame.K_l:
                     level_select_choice = level_number
                     game_state = "level_select"
@@ -218,6 +226,7 @@ def main():
                     particles = []
                     game_state = "playing"
                     write_save(level_number, lifetime_catches)
+                    pygame.mixer.music.play(loops=-1)
             elif game_state == "paused":
                 if event.type == pygame.KEYDOWN and event.key == pygame.K_q:
                     running = False
