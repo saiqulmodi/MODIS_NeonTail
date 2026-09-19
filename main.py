@@ -1,11 +1,10 @@
 """
 main.py -- MODIS_NeonTail
 
-Phase 9, Step 3: Tracker Tags. Once V.I.P.E.R. gets within detection range
-of the real squirrel, tag_timer resets to TAG_DURATION every frame that
-stays true -- so moving back out of range doesn't end the chase until
-tag_timer actually counts down to zero, unlike every other timer in the
-game so far, which only ever counts down from the moment it's set.
+Phase 9, Step 4: shields. A new "H" tile is a one-time pickup; the next
+time V.I.P.E.R. would catch the squirrel while it's carrying one, the
+shield is consumed instead of a real catch -- a brief invulnerability
+window follows so the same collision can't immediately catch you again.
 """
 
 import json
@@ -50,21 +49,21 @@ def level_path(level_number):
 
 
 def reset_level(level_number):
-    """Load a level's walls, landmines, jump-pads, and start positions.
-    Shared by the initial setup, N-key switching, and the level-select
-    screen, so the loading logic only lives in one place."""
-    walls, landmines, jump_pads, squirrel_start, viper_start = load_level(level_path(level_number))
+    """Load a level's walls, landmines, jump-pads, shields, and start
+    positions. Shared by the initial setup, N-key switching, and the
+    level-select screen, so the loading logic only lives in one place."""
+    walls, landmines, jump_pads, shields, squirrel_start, viper_start = load_level(level_path(level_number))
     squirrel_x, squirrel_y = squirrel_start
     viper_x, viper_y = viper_start
     viper_patrol_y = viper_y
-    return walls, landmines, jump_pads, squirrel_x, squirrel_y, viper_x, viper_y, viper_patrol_y
+    return walls, landmines, jump_pads, shields, squirrel_x, squirrel_y, viper_x, viper_y, viper_patrol_y
 
 
 def load_level(path):
     """Read a level JSON file and turn its character grid into wall rects,
-    landmine rects, jump-pad rects, and start positions. '#' = wall,
-    'S' = squirrel start, 'V' = V.I.P.E.R. start, 'W' = whoopee-cushion
-    landmine, 'J' = jump-pad."""
+    landmine rects, jump-pad rects, shield rects, and start positions.
+    '#' = wall, 'S' = squirrel start, 'V' = V.I.P.E.R. start,
+    'W' = whoopee-cushion landmine, 'J' = jump-pad, 'H' = shield pickup."""
     with open(path, "r", encoding="utf-8") as level_file:
         data = json.load(level_file)
 
@@ -74,6 +73,7 @@ def load_level(path):
     walls = []
     landmines = []
     jump_pads = []
+    shields = []
     squirrel_start = (0, 0)
     viper_start = (0, 0)
 
@@ -91,8 +91,10 @@ def load_level(path):
                 landmines.append(pygame.Rect(x, y, tile_size, tile_size))
             elif tile_char == "J":
                 jump_pads.append(pygame.Rect(x, y, tile_size, tile_size))
+            elif tile_char == "H":
+                shields.append(pygame.Rect(x, y, tile_size, tile_size))
 
-    return walls, landmines, jump_pads, squirrel_start, viper_start
+    return walls, landmines, jump_pads, shields, squirrel_start, viper_start
 
 
 def move_with_collision(x, y, dx, dy, size, walls):
@@ -161,6 +163,9 @@ DECOY_DURATION = 5.0  # seconds a decoy lasts before it vanishes unused
 
 TAG_DURATION = 4.0  # seconds V.I.P.E.R. stays locked on after losing direct range
 
+SHIELD_COLOR = (80, 220, 120)  # protective green -- reads as "power-up"
+INVULNERABLE_DURATION = 1.5  # seconds of safety right after a shield absorbs a catch
+
 
 def main():
     pygame.init()
@@ -186,8 +191,10 @@ def main():
 
     level_number = save_data["last_level"]
     level_select_choice = level_number  # which level is highlighted on the select screen
-    walls, landmines, jump_pads, squirrel_x, squirrel_y, viper_x, viper_y, viper_patrol_y = reset_level(level_number)
+    walls, landmines, jump_pads, shields, squirrel_x, squirrel_y, viper_x, viper_y, viper_patrol_y = reset_level(level_number)
     jump_cooldown_timer = 0.0
+    has_shield = False
+    invulnerable_timer = 0.0
     animation_timer = 0.0
 
     # squirrel_state is "free" (normal play) or "stasis" (caught, frozen
@@ -245,7 +252,7 @@ def main():
                     level_select_choice = level_select_choice % LEVEL_COUNT + 1
                 if event.type == pygame.KEYDOWN and event.key in (pygame.K_RETURN, pygame.K_KP_ENTER):
                     level_number = level_select_choice
-                    walls, landmines, jump_pads, squirrel_x, squirrel_y, viper_x, viper_y, viper_patrol_y = reset_level(level_number)
+                    walls, landmines, jump_pads, shields, squirrel_x, squirrel_y, viper_x, viper_y, viper_patrol_y = reset_level(level_number)
                     viper_direction = 1
                     squirrel_state = "free"
                     stasis_timer = 0.0
@@ -254,6 +261,8 @@ def main():
                     stun_timer = 0.0
                     tag_timer = 0.0
                     jump_cooldown_timer = 0.0
+                    has_shield = False
+                    invulnerable_timer = 0.0
                     facing_x, facing_y = 1, 0
                     particles = []
                     taunts = []
@@ -267,7 +276,7 @@ def main():
             elif game_state == "playing":
                 if event.type == pygame.KEYDOWN and event.key == pygame.K_n:
                     level_number = level_number % LEVEL_COUNT + 1  # wraps 10 -> 1
-                    walls, landmines, jump_pads, squirrel_x, squirrel_y, viper_x, viper_y, viper_patrol_y = reset_level(level_number)
+                    walls, landmines, jump_pads, shields, squirrel_x, squirrel_y, viper_x, viper_y, viper_patrol_y = reset_level(level_number)
                     viper_direction = 1
                     squirrel_state = "free"
                     stasis_timer = 0.0
@@ -276,6 +285,8 @@ def main():
                     stun_timer = 0.0
                     tag_timer = 0.0
                     jump_cooldown_timer = 0.0
+                    has_shield = False
+                    invulnerable_timer = 0.0
                     facing_x, facing_y = 1, 0
                     particles = []
                     taunts = []
@@ -366,6 +377,19 @@ def main():
                 squirrel_y = max(0, min(WINDOW_HEIGHT - SQUIRREL_SIZE, squirrel_y))
                 squirrel_rect = pygame.Rect(squirrel_x, squirrel_y - bounce, SQUIRREL_SIZE, SQUIRREL_SIZE)
                 jump_cooldown_timer = JUMP_COOLDOWN
+
+            # Picking up a shield grants one-catch protection -- a one-time
+            # pickup, removed from the level once collected.
+            if squirrel_state == "free" and not has_shield:
+                hit_shield = squirrel_rect.collidelist(shields)
+                if hit_shield != -1:
+                    del shields[hit_shield]
+                    has_shield = True
+
+            # Brief invulnerability right after a shield absorbs a catch,
+            # so the same overlap can't immediately catch you again.
+            if invulnerable_timer > 0:
+                invulnerable_timer -= delta_time
 
             # Squirrel stasis countdown -- independent of what V.I.P.E.R. is doing.
             if squirrel_state == "stasis":
@@ -503,15 +527,20 @@ def main():
                         })
                         break
 
-            # Tag check -- only while free, so an already-caught squirrel
-            # can't be "caught again" mid-bubble.
-            if squirrel_state == "free" and squirrel_rect.colliderect(viper_rect):
-                squirrel_state = "stasis"
-                stasis_timer = STASIS_DURATION
-                score += 1
-                lifetime_catches += 1
-                write_save(level_number, lifetime_catches)
-                caught_sound.play()
+            # Tag check -- only while free and not still invulnerable from a
+            # just-consumed shield, so an already-caught squirrel can't be
+            # "caught again" mid-bubble or immediately re-caught same frame.
+            if squirrel_state == "free" and invulnerable_timer <= 0 and squirrel_rect.colliderect(viper_rect):
+                if has_shield:
+                    has_shield = False
+                    invulnerable_timer = INVULNERABLE_DURATION
+                else:
+                    squirrel_state = "stasis"
+                    stasis_timer = STASIS_DURATION
+                    score += 1
+                    lifetime_catches += 1
+                    write_save(level_number, lifetime_catches)
+                    caught_sound.play()
 
         # 3. Draw everything
         screen.fill(BACKGROUND_COLOR)
@@ -556,6 +585,9 @@ def main():
                 diamond_points = [(cx, cy - half), (cx + half, cy), (cx, cy + half), (cx - half, cy)]
                 pygame.draw.polygon(screen, JUMP_PAD_COLOR, diamond_points)
 
+            for shield in shields:
+                pygame.draw.circle(screen, SHIELD_COLOR, shield.center, shield.width // 3, width=4)
+
             if decoy is not None:
                 decoy_rect = pygame.Rect(0, 0, SQUIRREL_SIZE, SQUIRREL_SIZE)
                 decoy_rect.center = (decoy["x"], decoy["y"])
@@ -566,6 +598,10 @@ def main():
                 pygame.draw.circle(screen, STASIS_BUBBLE_COLOR, bubble_center, SQUIRREL_SIZE)
             else:
                 pygame.draw.rect(screen, SQUIRREL_COLOR, squirrel_rect)
+                if has_shield:
+                    pygame.draw.rect(screen, SHIELD_COLOR, squirrel_rect.inflate(8, 8), width=3)
+                elif invulnerable_timer > 0:
+                    pygame.draw.rect(screen, TEXT_COLOR, squirrel_rect.inflate(8, 8), width=3)
 
             if viper_state == "blinded":
                 viper_color = VIPER_BLINDED_COLOR
