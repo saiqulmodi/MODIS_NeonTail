@@ -1,9 +1,11 @@
 """
 main.py -- MODIS_NeonTail
 
-Phase 7, Step 4: save system. save.json remembers the last level played
-and lifetime catch count between sessions -- written with json.dump()
-whenever either changes, and shown on the main menu.
+Phase 8, Step 1: sound effects. pygame.mixer.Sound loads a short .wav
+once at startup; calling .play() on it fires the sound without blocking
+the game loop, so effects can overlap freely. All three sounds were
+synthesized from scratch (see the scratchpad's generate_sounds.py), not
+downloaded, to keep with the project's free/self-generated assets rule.
 """
 
 import json
@@ -16,6 +18,7 @@ import pygame
 LEVEL_DIR = Path(__file__).parent / "levels"
 LEVEL_COUNT = 10  # level_001.json through level_010.json
 SAVE_PATH = Path(__file__).parent / "save.json"
+SOUND_DIR = Path(__file__).parent / "assets" / "sounds"
 TILE_WALL_COLOR = (60, 60, 90)  # dark slate -- reads as "structure", not floor
 
 
@@ -142,6 +145,10 @@ def main():
     font = pygame.font.SysFont(None, 36)  # None = pygame's default built-in font
     title_font = pygame.font.SysFont(None, 72)
 
+    caught_sound = pygame.mixer.Sound(SOUND_DIR / "caught.wav")
+    kick_sound = pygame.mixer.Sound(SOUND_DIR / "kick.wav")
+    blind_sound = pygame.mixer.Sound(SOUND_DIR / "blind.wav")
+
     # game_state is "menu" (title screen) or "playing" (gameplay running).
     game_state = "menu"
 
@@ -228,6 +235,7 @@ def main():
                     write_save(level_number, lifetime_catches)
                 if event.type == pygame.KEYDOWN and event.key == pygame.K_SPACE:
                     if squirrel_state == "free":
+                        kick_sound.play()
                         base_angle = math.atan2(facing_y, facing_x)
                         spread = math.radians(PARTICLE_SPREAD_DEGREES)
                         kick_x = squirrel_x + SQUIRREL_SIZE / 2
@@ -350,6 +358,7 @@ def main():
                     if viper_rect.collidepoint(particle["x"], particle["y"]):
                         viper_state = "blinded"
                         blind_timer = VIPER_BLIND_DURATION
+                        blind_sound.play()
                         break
 
             # Tag check -- only while free, so an already-caught squirrel
@@ -360,6 +369,7 @@ def main():
                 score += 1
                 lifetime_catches += 1
                 write_save(level_number, lifetime_catches)
+                caught_sound.play()
 
         # 3. Draw everything
         screen.fill(BACKGROUND_COLOR)
