@@ -1,11 +1,11 @@
 """
 main.py -- MODIS_NeonTail
 
-Phase 9, Step 1: jump-pads. A new "J" tile launches the squirrel a fixed
-distance in whichever direction it's currently facing when stepped on
-(still blocked by walls, same as normal movement), for quick traversal
-across gaps and rooms. Unlike landmines, jump-pads are reusable -- a
-short cooldown after each launch just stops it firing twice in one step.
+Phase 9, Step 2: Tail Flagging (decoy). Pressing F drops a stationary
+decoy at the squirrel's position -- while it exists, V.I.P.E.R. targets
+it instead of the real squirrel whenever it's close enough to notice it,
+and reaching the decoy consumes it (freeing up another drop). It also
+expires on its own after a few seconds if V.I.P.E.R. never finds it.
 """
 
 import json
@@ -157,6 +157,8 @@ JUMP_PAD_COLOR = (255, 215, 0)  # gold -- reads as "special", distinct from ever
 JUMP_DISTANCE = 150  # pixels the squirrel is launched, more than one tile wide
 JUMP_COOLDOWN = 0.4  # seconds after a launch before the pad can fire again
 
+DECOY_DURATION = 5.0  # seconds a decoy lasts before it vanishes unused
+
 
 def main():
     pygame.init()
@@ -205,6 +207,7 @@ def main():
     facing_x, facing_y = 1, 0  # direction the squirrel last moved/faced
     particles = []              # each particle is a dict: x, y, vx, vy, lifetime
     taunts = []                  # each taunt is a dict: text, x, y, age
+    decoy = None                 # None, or a dict: x, y, timer
 
     running = True
     while running:
@@ -250,6 +253,7 @@ def main():
                     facing_x, facing_y = 1, 0
                     particles = []
                     taunts = []
+                    decoy = None
                     game_state = "playing"
                     write_save(level_number, lifetime_catches)
                     pygame.mixer.music.play(loops=-1)
@@ -270,6 +274,7 @@ def main():
                     facing_x, facing_y = 1, 0
                     particles = []
                     taunts = []
+                    decoy = None
                     write_save(level_number, lifetime_catches)
                 if event.type == pygame.KEYDOWN and event.key == pygame.K_SPACE:
                     if squirrel_state == "free":
@@ -288,6 +293,13 @@ def main():
                                 "vy": math.sin(angle) * speed,
                                 "lifetime": PARTICLE_LIFETIME,
                             })
+                if event.type == pygame.KEYDOWN and event.key == pygame.K_f:
+                    if squirrel_state == "free" and decoy is None:
+                        decoy = {
+                            "x": squirrel_x + SQUIRREL_SIZE / 2,
+                            "y": squirrel_y + SQUIRREL_SIZE / 2,
+                            "timer": DECOY_DURATION,
+                        }
 
         # 2. Update game state -- gameplay only advances while playing, so
         # the menu screen doesn't move or count down behind the scenes.
@@ -371,13 +383,29 @@ def main():
                 if stun_timer <= 0:
                     viper_state = "active"
 
+            # The decoy expires on its own if V.I.P.E.R. never reaches it.
+            if decoy is not None:
+                decoy["timer"] -= delta_time
+                if decoy["timer"] <= 0:
+                    decoy = None
+
             if viper_state == "stunned":
                 pass  # frozen in place -- no movement at all
             elif squirrel_state == "free" and viper_state == "active":
-                # Distance from V.I.P.E.R. to the squirrel, using each one's
+                # What V.I.P.E.R. is trying to reach: a decoy takes priority
+                # over the real squirrel if V.I.P.E.R. is close enough to it
+                # to notice -- otherwise it's just the squirrel as normal.
+                target_x = squirrel_x + SQUIRREL_SIZE / 2
+                target_y = squirrel_y + SQUIRREL_SIZE / 2
+                if decoy is not None:
+                    decoy_distance = math.hypot(decoy["x"] - (viper_x + VIPER_SIZE / 2), decoy["y"] - (viper_y + VIPER_SIZE / 2))
+                    if decoy_distance <= VIPER_DETECTION_RANGE:
+                        target_x, target_y = decoy["x"], decoy["y"]
+
+                # Distance from V.I.P.E.R. to the target, using each one's
                 # center point -- the classic way an AI "notices" a target.
-                dx = (squirrel_x + SQUIRREL_SIZE / 2) - (viper_x + VIPER_SIZE / 2)
-                dy = (squirrel_y + SQUIRREL_SIZE / 2) - (viper_y + VIPER_SIZE / 2)
+                dx = target_x - (viper_x + VIPER_SIZE / 2)
+                dy = target_y - (viper_y + VIPER_SIZE / 2)
                 distance_to_squirrel = math.hypot(dx, dy)
 
                 if distance_to_squirrel <= VIPER_DETECTION_RANGE and distance_to_squirrel > 0:
@@ -410,6 +438,11 @@ def main():
             viper_x = max(0, min(WINDOW_WIDTH - VIPER_SIZE, viper_x))
             viper_y = max(0, min(WINDOW_HEIGHT - VIPER_SIZE, viper_y))
             viper_rect = pygame.Rect(viper_x, viper_y, VIPER_SIZE, VIPER_SIZE)
+
+            # V.I.P.E.R. reaching the decoy "investigates" it -- consumed,
+            # freeing up another drop, with no other gameplay effect.
+            if decoy is not None and viper_rect.collidepoint(decoy["x"], decoy["y"]):
+                decoy = None
 
             # Stepping on a landmine stuns V.I.P.E.R. and uses the landmine
             # up -- only while active, so it can't be re-triggered or
@@ -504,6 +537,11 @@ def main():
                 half = pad.width // 2 - 6
                 diamond_points = [(cx, cy - half), (cx + half, cy), (cx, cy + half), (cx - half, cy)]
                 pygame.draw.polygon(screen, JUMP_PAD_COLOR, diamond_points)
+
+            if decoy is not None:
+                decoy_rect = pygame.Rect(0, 0, SQUIRREL_SIZE, SQUIRREL_SIZE)
+                decoy_rect.center = (decoy["x"], decoy["y"])
+                pygame.draw.rect(screen, SQUIRREL_COLOR, decoy_rect, width=3)
 
             if squirrel_state == "stasis":
                 bubble_center = (int(squirrel_x + SQUIRREL_SIZE / 2), int(squirrel_y + SQUIRREL_SIZE / 2))
