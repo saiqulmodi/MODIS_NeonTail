@@ -1,14 +1,49 @@
 """
 main.py -- MODIS_NeonTail
 
-Phase 5, Step 1: dirt kick particle system. Press Space to kick a burst
-of dirt particles in the direction the squirrel is facing -- visual only
-for now, no gameplay effect yet.
+Phase 6, Step 1: tile-map level loader. Reads levels/level_001.json --
+a grid of characters describing walls and start positions -- and builds
+the level from it instead of hardcoding everything. Walls are drawn but
+don't block movement yet.
 """
 
+import json
 import math
 import random
+from pathlib import Path
+
 import pygame
+
+LEVEL_DIR = Path(__file__).parent / "levels"
+LEVEL_PATH = LEVEL_DIR / "level_001.json"
+TILE_WALL_COLOR = (60, 60, 90)  # dark slate -- reads as "structure", not floor
+
+
+def load_level(path):
+    """Read a level JSON file and turn its character grid into wall rects
+    and start positions. '#' = wall, 'S' = squirrel start, 'V' = V.I.P.E.R. start."""
+    with open(path, "r", encoding="utf-8") as level_file:
+        data = json.load(level_file)
+
+    tile_size = data["tile_size"]
+    grid = data["grid"]
+
+    walls = []
+    squirrel_start = (0, 0)
+    viper_start = (0, 0)
+
+    for row_index, row in enumerate(grid):
+        for col_index, tile_char in enumerate(row):
+            x = col_index * tile_size
+            y = row_index * tile_size
+            if tile_char == "#":
+                walls.append(pygame.Rect(x, y, tile_size, tile_size))
+            elif tile_char == "S":
+                squirrel_start = (x, y)
+            elif tile_char == "V":
+                viper_start = (x, y)
+
+    return walls, squirrel_start, viper_start
 
 WINDOW_WIDTH = 1024
 WINDOW_HEIGHT = 768
@@ -32,7 +67,6 @@ VIPER_CHASE_SPEED = 220    # faster while chasing, but still slower than the
 VIPER_DETECTION_RANGE = 250  # pixels -- how close before it notices you
 VIPER_PATROL_LEFT = 100
 VIPER_PATROL_RIGHT = WINDOW_WIDTH - 100 - VIPER_SIZE
-VIPER_PATROL_Y = 100
 
 VIPER_BLIND_DURATION = 3.0  # seconds V.I.P.E.R. can't see after a dirt hit
 VIPER_BLINDED_COLOR = (80, 80, 90)  # dim gray -- visually shows it can't see
@@ -56,8 +90,9 @@ def main():
     clock = pygame.time.Clock()
     font = pygame.font.SysFont(None, 36)  # None = pygame's default built-in font
 
-    squirrel_x = WINDOW_WIDTH / 2
-    squirrel_y = WINDOW_HEIGHT / 2
+    walls, squirrel_start, viper_start = load_level(LEVEL_PATH)
+
+    squirrel_x, squirrel_y = squirrel_start
     animation_timer = 0.0
 
     # squirrel_state is "free" (normal play) or "stasis" (caught, frozen
@@ -65,8 +100,8 @@ def main():
     squirrel_state = "free"
     stasis_timer = 0.0
 
-    viper_x = VIPER_PATROL_LEFT
-    viper_y = VIPER_PATROL_Y
+    viper_x, viper_y = viper_start
+    viper_patrol_y = viper_y  # patrol height now comes from the level file
     viper_direction = 1  # 1 = moving right, -1 = moving left
 
     # viper_state is "active" (can see/chase normally) or "blinded"
@@ -166,7 +201,7 @@ def main():
                 viper_x += (dx / distance_to_squirrel) * VIPER_CHASE_SPEED * delta_time
                 viper_y += (dy / distance_to_squirrel) * VIPER_CHASE_SPEED * delta_time
             else:
-                viper_y = VIPER_PATROL_Y
+                viper_y = viper_patrol_y
                 viper_x += VIPER_PATROL_SPEED * viper_direction * delta_time
                 if viper_x <= VIPER_PATROL_LEFT:
                     viper_x = VIPER_PATROL_LEFT
@@ -177,7 +212,7 @@ def main():
         else:
             # Squirrel in stasis, or V.I.P.E.R. blinded -- either way there's
             # nothing to chase right now, so just patrol.
-            viper_y = VIPER_PATROL_Y
+            viper_y = viper_patrol_y
             viper_x += VIPER_PATROL_SPEED * viper_direction * delta_time
             if viper_x <= VIPER_PATROL_LEFT:
                 viper_x = VIPER_PATROL_LEFT
@@ -215,6 +250,9 @@ def main():
 
         # 3. Draw everything
         screen.fill(BACKGROUND_COLOR)
+
+        for wall in walls:
+            pygame.draw.rect(screen, TILE_WALL_COLOR, wall)
 
         if squirrel_state == "stasis":
             bubble_center = (int(squirrel_x + SQUIRREL_SIZE / 2), int(squirrel_y + SQUIRREL_SIZE / 2))
