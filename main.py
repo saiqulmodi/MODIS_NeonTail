@@ -34,6 +34,9 @@ VIPER_PATROL_LEFT = 100
 VIPER_PATROL_RIGHT = WINDOW_WIDTH - 100 - VIPER_SIZE
 VIPER_PATROL_Y = 100
 
+VIPER_BLIND_DURATION = 3.0  # seconds V.I.P.E.R. can't see after a dirt hit
+VIPER_BLINDED_COLOR = (80, 80, 90)  # dim gray -- visually shows it can't see
+
 STASIS_DURATION = 3.0  # seconds spent in the stasis bubble after being caught
 STASIS_BUBBLE_COLOR = (200, 230, 255)  # pale icy-blue bubble
 
@@ -65,6 +68,11 @@ def main():
     viper_x = VIPER_PATROL_LEFT
     viper_y = VIPER_PATROL_Y
     viper_direction = 1  # 1 = moving right, -1 = moving left
+
+    # viper_state is "active" (can see/chase normally) or "blinded"
+    # (dirt hit it -- just patrols obliviously until blind_timer runs out).
+    viper_state = "active"
+    blind_timer = 0.0
 
     score = 0            # how many times you've been caught
     game_time = 0.0       # total seconds played, counts up
@@ -133,7 +141,21 @@ def main():
         bounce = abs(math.sin(animation_timer * ANIMATION_SPEED)) * BOUNCE_HEIGHT
         squirrel_rect = pygame.Rect(squirrel_x, squirrel_y - bounce, SQUIRREL_SIZE, SQUIRREL_SIZE)
 
-        if squirrel_state == "free":
+        # Squirrel stasis countdown -- independent of what V.I.P.E.R. is doing.
+        if squirrel_state == "stasis":
+            stasis_timer -= delta_time
+            if stasis_timer <= 0:
+                squirrel_state = "free"
+                squirrel_x = WINDOW_WIDTH / 2
+                squirrel_y = WINDOW_HEIGHT / 2
+
+        # V.I.P.E.R. blinded countdown -- independent of the squirrel.
+        if viper_state == "blinded":
+            blind_timer -= delta_time
+            if blind_timer <= 0:
+                viper_state = "active"
+
+        if squirrel_state == "free" and viper_state == "active":
             # Distance from V.I.P.E.R. to the squirrel, using each one's
             # center point -- the classic way an AI "notices" a target.
             dx = (squirrel_x + SQUIRREL_SIZE / 2) - (viper_x + VIPER_SIZE / 2)
@@ -153,8 +175,8 @@ def main():
                     viper_x = VIPER_PATROL_RIGHT
                     viper_direction = -1
         else:
-            # While the squirrel is in stasis, V.I.P.E.R. just keeps
-            # patrolling -- nothing left nearby to chase.
+            # Squirrel in stasis, or V.I.P.E.R. blinded -- either way there's
+            # nothing to chase right now, so just patrol.
             viper_y = VIPER_PATROL_Y
             viper_x += VIPER_PATROL_SPEED * viper_direction * delta_time
             if viper_x <= VIPER_PATROL_LEFT:
@@ -163,12 +185,6 @@ def main():
             elif viper_x >= VIPER_PATROL_RIGHT:
                 viper_x = VIPER_PATROL_RIGHT
                 viper_direction = -1
-
-            stasis_timer -= delta_time
-            if stasis_timer <= 0:
-                squirrel_state = "free"
-                squirrel_x = WINDOW_WIDTH / 2
-                squirrel_y = WINDOW_HEIGHT / 2
 
         viper_x = max(0, min(WINDOW_WIDTH - VIPER_SIZE, viper_x))
         viper_y = max(0, min(WINDOW_HEIGHT - VIPER_SIZE, viper_y))
@@ -180,6 +196,15 @@ def main():
             particle["y"] += particle["vy"] * delta_time
             particle["lifetime"] -= delta_time
         particles = [p for p in particles if p["lifetime"] > 0]
+
+        # A dirt particle touching V.I.P.E.R. blinds it -- only while it
+        # can currently see, so an already-blinded hit doesn't reset the timer.
+        if viper_state == "active":
+            for particle in particles:
+                if viper_rect.collidepoint(particle["x"], particle["y"]):
+                    viper_state = "blinded"
+                    blind_timer = VIPER_BLIND_DURATION
+                    break
 
         # Tag check -- only while free, so an already-caught squirrel
         # can't be "caught again" mid-bubble.
@@ -197,7 +222,8 @@ def main():
         else:
             pygame.draw.rect(screen, SQUIRREL_COLOR, squirrel_rect)
 
-        pygame.draw.rect(screen, VIPER_COLOR, viper_rect)
+        viper_color = VIPER_BLINDED_COLOR if viper_state == "blinded" else VIPER_COLOR
+        pygame.draw.rect(screen, viper_color, viper_rect)
 
         for particle in particles:
             pygame.draw.circle(screen, PARTICLE_COLOR, (int(particle["x"]), int(particle["y"])), PARTICLE_SIZE)
