@@ -45,6 +45,20 @@ def load_level(path):
 
     return walls, squirrel_start, viper_start
 
+
+def move_with_collision(x, y, dx, dy, size, walls):
+    """Move by (dx, dy) one axis at a time, undoing whichever axis would
+    land inside a wall -- this is what lets you slide along a wall instead
+    of getting stuck the moment you bump into it diagonally."""
+    new_x = x + dx
+    if pygame.Rect(new_x, y, size, size).collidelist(walls) != -1:
+        new_x = x
+    new_y = y + dy
+    if pygame.Rect(new_x, new_y, size, size).collidelist(walls) != -1:
+        new_y = y
+    return new_x, new_y
+
+
 WINDOW_WIDTH = 1024
 WINDOW_HEIGHT = 768
 FPS = 60
@@ -145,27 +159,32 @@ def main():
 
         keys = pygame.key.get_pressed()
         is_moving = False
+        move_dx = 0
+        move_dy = 0
 
         # No player input while caught -- the squirrel is frozen in the bubble.
         if squirrel_state == "free":
             if keys[pygame.K_LEFT] or keys[pygame.K_a]:
-                squirrel_x -= SQUIRREL_SPEED * delta_time
+                move_dx -= SQUIRREL_SPEED * delta_time
                 is_moving = True
                 facing_x, facing_y = -1, 0
             if keys[pygame.K_RIGHT] or keys[pygame.K_d]:
-                squirrel_x += SQUIRREL_SPEED * delta_time
+                move_dx += SQUIRREL_SPEED * delta_time
                 is_moving = True
                 facing_x, facing_y = 1, 0
             if keys[pygame.K_UP] or keys[pygame.K_w]:
-                squirrel_y -= SQUIRREL_SPEED * delta_time
+                move_dy -= SQUIRREL_SPEED * delta_time
                 is_moving = True
                 facing_x, facing_y = 0, -1
             if keys[pygame.K_DOWN] or keys[pygame.K_s]:
-                squirrel_y += SQUIRREL_SPEED * delta_time
+                move_dy += SQUIRREL_SPEED * delta_time
                 is_moving = True
                 facing_x, facing_y = 0, 1
 
         # 2. Update game state
+        squirrel_x, squirrel_y = move_with_collision(
+            squirrel_x, squirrel_y, move_dx, move_dy, SQUIRREL_SIZE, walls
+        )
         squirrel_x = max(0, min(WINDOW_WIDTH - SQUIRREL_SIZE, squirrel_x))
         squirrel_y = max(0, min(WINDOW_HEIGHT - SQUIRREL_SIZE, squirrel_y))
 
@@ -198,11 +217,13 @@ def main():
             distance_to_squirrel = math.hypot(dx, dy)
 
             if distance_to_squirrel <= VIPER_DETECTION_RANGE and distance_to_squirrel > 0:
-                viper_x += (dx / distance_to_squirrel) * VIPER_CHASE_SPEED * delta_time
-                viper_y += (dy / distance_to_squirrel) * VIPER_CHASE_SPEED * delta_time
+                chase_dx = (dx / distance_to_squirrel) * VIPER_CHASE_SPEED * delta_time
+                chase_dy = (dy / distance_to_squirrel) * VIPER_CHASE_SPEED * delta_time
+                viper_x, viper_y = move_with_collision(viper_x, viper_y, chase_dx, chase_dy, VIPER_SIZE, walls)
             else:
                 viper_y = viper_patrol_y
-                viper_x += VIPER_PATROL_SPEED * viper_direction * delta_time
+                patrol_dx = VIPER_PATROL_SPEED * viper_direction * delta_time
+                viper_x, viper_y = move_with_collision(viper_x, viper_y, patrol_dx, 0, VIPER_SIZE, walls)
                 if viper_x <= VIPER_PATROL_LEFT:
                     viper_x = VIPER_PATROL_LEFT
                     viper_direction = 1
@@ -213,7 +234,8 @@ def main():
             # Squirrel in stasis, or V.I.P.E.R. blinded -- either way there's
             # nothing to chase right now, so just patrol.
             viper_y = viper_patrol_y
-            viper_x += VIPER_PATROL_SPEED * viper_direction * delta_time
+            patrol_dx = VIPER_PATROL_SPEED * viper_direction * delta_time
+            viper_x, viper_y = move_with_collision(viper_x, viper_y, patrol_dx, 0, VIPER_SIZE, walls)
             if viper_x <= VIPER_PATROL_LEFT:
                 viper_x = VIPER_PATROL_LEFT
                 viper_direction = 1
