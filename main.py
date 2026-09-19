@@ -1,11 +1,11 @@
 """
 main.py -- MODIS_NeonTail
 
-Phase 9, Step 2: Tail Flagging (decoy). Pressing F drops a stationary
-decoy at the squirrel's position -- while it exists, V.I.P.E.R. targets
-it instead of the real squirrel whenever it's close enough to notice it,
-and reaching the decoy consumes it (freeing up another drop). It also
-expires on its own after a few seconds if V.I.P.E.R. never finds it.
+Phase 9, Step 3: Tracker Tags. Once V.I.P.E.R. gets within detection range
+of the real squirrel, tag_timer resets to TAG_DURATION every frame that
+stays true -- so moving back out of range doesn't end the chase until
+tag_timer actually counts down to zero, unlike every other timer in the
+game so far, which only ever counts down from the moment it's set.
 """
 
 import json
@@ -159,6 +159,8 @@ JUMP_COOLDOWN = 0.4  # seconds after a launch before the pad can fire again
 
 DECOY_DURATION = 5.0  # seconds a decoy lasts before it vanishes unused
 
+TAG_DURATION = 4.0  # seconds V.I.P.E.R. stays locked on after losing direct range
+
 
 def main():
     pygame.init()
@@ -200,6 +202,7 @@ def main():
     viper_state = "active"
     blind_timer = 0.0
     stun_timer = 0.0
+    tag_timer = 0.0
 
     score = 0            # how many times you've been caught
     game_time = 0.0       # total seconds played, counts up
@@ -249,6 +252,7 @@ def main():
                     viper_state = "active"
                     blind_timer = 0.0
                     stun_timer = 0.0
+                    tag_timer = 0.0
                     jump_cooldown_timer = 0.0
                     facing_x, facing_y = 1, 0
                     particles = []
@@ -270,6 +274,7 @@ def main():
                     viper_state = "active"
                     blind_timer = 0.0
                     stun_timer = 0.0
+                    tag_timer = 0.0
                     jump_cooldown_timer = 0.0
                     facing_x, facing_y = 1, 0
                     particles = []
@@ -392,26 +397,39 @@ def main():
             if viper_state == "stunned":
                 pass  # frozen in place -- no movement at all
             elif squirrel_state == "free" and viper_state == "active":
-                # What V.I.P.E.R. is trying to reach: a decoy takes priority
-                # over the real squirrel if V.I.P.E.R. is close enough to it
-                # to notice -- otherwise it's just the squirrel as normal.
-                target_x = squirrel_x + SQUIRREL_SIZE / 2
-                target_y = squirrel_y + SQUIRREL_SIZE / 2
-                if decoy is not None:
-                    decoy_distance = math.hypot(decoy["x"] - (viper_x + VIPER_SIZE / 2), decoy["y"] - (viper_y + VIPER_SIZE / 2))
-                    if decoy_distance <= VIPER_DETECTION_RANGE:
-                        target_x, target_y = decoy["x"], decoy["y"]
+                # Distance to the REAL squirrel drives tag_timer, regardless
+                # of whether a decoy is what's actually being chased right
+                # now -- this is what makes the lock-on "sticky": tag_timer
+                # keeps getting refreshed while in range, and only starts
+                # counting down once the squirrel steps back out of it.
+                squirrel_dx = (squirrel_x + SQUIRREL_SIZE / 2) - (viper_x + VIPER_SIZE / 2)
+                squirrel_dy = (squirrel_y + SQUIRREL_SIZE / 2) - (viper_y + VIPER_SIZE / 2)
+                distance_to_squirrel = math.hypot(squirrel_dx, squirrel_dy)
 
-                # Distance from V.I.P.E.R. to the target, using each one's
-                # center point -- the classic way an AI "notices" a target.
-                dx = target_x - (viper_x + VIPER_SIZE / 2)
-                dy = target_y - (viper_y + VIPER_SIZE / 2)
-                distance_to_squirrel = math.hypot(dx, dy)
+                if distance_to_squirrel <= VIPER_DETECTION_RANGE:
+                    tag_timer = TAG_DURATION
+                else:
+                    tag_timer -= delta_time
 
-                if distance_to_squirrel <= VIPER_DETECTION_RANGE and distance_to_squirrel > 0:
-                    chase_dx = (dx / distance_to_squirrel) * VIPER_CHASE_SPEED * delta_time
-                    chase_dy = (dy / distance_to_squirrel) * VIPER_CHASE_SPEED * delta_time
-                    viper_x, viper_y = move_with_collision(viper_x, viper_y, chase_dx, chase_dy, VIPER_SIZE, walls)
+                if distance_to_squirrel <= VIPER_DETECTION_RANGE or tag_timer > 0:
+                    # What V.I.P.E.R. is trying to reach: a decoy takes
+                    # priority over the real squirrel if V.I.P.E.R. is close
+                    # enough to it to notice -- otherwise it's the squirrel.
+                    target_x = squirrel_x + SQUIRREL_SIZE / 2
+                    target_y = squirrel_y + SQUIRREL_SIZE / 2
+                    if decoy is not None:
+                        decoy_distance = math.hypot(decoy["x"] - (viper_x + VIPER_SIZE / 2), decoy["y"] - (viper_y + VIPER_SIZE / 2))
+                        if decoy_distance <= VIPER_DETECTION_RANGE:
+                            target_x, target_y = decoy["x"], decoy["y"]
+
+                    dx = target_x - (viper_x + VIPER_SIZE / 2)
+                    dy = target_y - (viper_y + VIPER_SIZE / 2)
+                    target_distance = math.hypot(dx, dy)
+
+                    if target_distance > 0:
+                        chase_dx = (dx / target_distance) * VIPER_CHASE_SPEED * delta_time
+                        chase_dy = (dy / target_distance) * VIPER_CHASE_SPEED * delta_time
+                        viper_x, viper_y = move_with_collision(viper_x, viper_y, chase_dx, chase_dy, VIPER_SIZE, walls)
                 else:
                     viper_y = viper_patrol_y
                     patrol_dx = VIPER_PATROL_SPEED * viper_direction * delta_time
