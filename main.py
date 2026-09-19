@@ -15,7 +15,7 @@ from pathlib import Path
 import pygame
 
 LEVEL_DIR = Path(__file__).parent / "levels"
-LEVEL_COUNT = 10  # level_001.json through level_010.json
+LEVEL_COUNT = 50  # level_001.json through level_050.json
 SAVE_PATH = Path(__file__).parent / "save.json"
 SOUND_DIR = Path(__file__).parent / "assets" / "sounds"
 MUSIC_PATH = Path(__file__).parent / "assets" / "music" / "theme.wav"
