@@ -1,8 +1,8 @@
 """
 main.py -- MODIS_NeonTail
 
-Phase 4, Step 1: tag mechanic -- V.I.P.E.R. catching the squirrel now
-triggers a "stasis bubble" timeout instead of just overlapping harmlessly.
+Phase 4, Step 2: on-screen score (how many times you've been caught) and
+a running game timer, drawn with pygame's font system.
 """
 
 import math
@@ -12,6 +12,7 @@ WINDOW_WIDTH = 1024
 WINDOW_HEIGHT = 768
 FPS = 60
 BACKGROUND_COLOR = (20, 20, 40)  # dark space-blue
+TEXT_COLOR = (255, 255, 255)
 
 SQUIRREL_COLOR = (255, 140, 0)  # orange -- heat-signature color, matches the theme
 SQUIRREL_SIZE = 40
@@ -40,6 +41,7 @@ def main():
     screen = pygame.display.set_mode((WINDOW_WIDTH, WINDOW_HEIGHT))
     pygame.display.set_caption("MODIS_NeonTail")
     clock = pygame.time.Clock()
+    font = pygame.font.SysFont(None, 36)  # None = pygame's default built-in font
 
     squirrel_x = WINDOW_WIDTH / 2
     squirrel_y = WINDOW_HEIGHT / 2
@@ -54,9 +56,13 @@ def main():
     viper_y = VIPER_PATROL_Y
     viper_direction = 1  # 1 = moving right, -1 = moving left
 
+    score = 0            # how many times you've been caught
+    game_time = 0.0       # total seconds played, counts up
+
     running = True
     while running:
         delta_time = clock.tick(FPS) / 1000
+        game_time += delta_time
 
         # 1. Handle input/events
         for event in pygame.event.get():
@@ -140,6 +146,7 @@ def main():
         if squirrel_state == "free" and squirrel_rect.colliderect(viper_rect):
             squirrel_state = "stasis"
             stasis_timer = STASIS_DURATION
+            score += 1
 
         # 3. Draw everything
         screen.fill(BACKGROUND_COLOR)
@@ -151,6 +158,17 @@ def main():
             pygame.draw.rect(screen, SQUIRREL_COLOR, squirrel_rect)
 
         pygame.draw.rect(screen, VIPER_COLOR, viper_rect)
+
+        # Score and timer, top-left corner. render() turns text into an
+        # image; blit() draws that image onto the screen.
+        score_surface = font.render(f"Caught: {score}", True, TEXT_COLOR)
+        screen.blit(score_surface, (20, 20))
+
+        minutes = int(game_time // 60)
+        seconds = int(game_time % 60)
+        timer_surface = font.render(f"Time: {minutes:02d}:{seconds:02d}", True, TEXT_COLOR)
+        screen.blit(timer_surface, (20, 60))
+
         pygame.display.flip()
 
     pygame.quit()
