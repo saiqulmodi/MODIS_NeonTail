@@ -1,10 +1,9 @@
 """
 main.py -- MODIS_NeonTail
 
-Phase 7, Step 3: level select. From the main menu, L opens a screen to
-pick which of the 10 levels to start on (Left/Right to choose, Enter to
-confirm, Escape to go back) -- "Press ENTER to Play" remains a shortcut
-into whatever level was last loaded.
+Phase 7, Step 4: save system. save.json remembers the last level played
+and lifetime catch count between sessions -- written with json.dump()
+whenever either changes, and shown on the main menu.
 """
 
 import json
@@ -16,7 +15,30 @@ import pygame
 
 LEVEL_DIR = Path(__file__).parent / "levels"
 LEVEL_COUNT = 10  # level_001.json through level_010.json
+SAVE_PATH = Path(__file__).parent / "save.json"
 TILE_WALL_COLOR = (60, 60, 90)  # dark slate -- reads as "structure", not floor
+
+
+def load_save():
+    """Read save.json if it exists; fall back to defaults on a first run
+    or if the file is missing/corrupt."""
+    if SAVE_PATH.exists():
+        try:
+            with open(SAVE_PATH, "r", encoding="utf-8") as save_file:
+                data = json.load(save_file)
+            return {
+                "last_level": data.get("last_level", 1),
+                "lifetime_catches": data.get("lifetime_catches", 0),
+            }
+        except (json.JSONDecodeError, OSError):
+            pass
+    return {"last_level": 1, "lifetime_catches": 0}
+
+
+def write_save(last_level, lifetime_catches):
+    data = {"last_level": last_level, "lifetime_catches": lifetime_catches}
+    with open(SAVE_PATH, "w", encoding="utf-8") as save_file:
+        json.dump(data, save_file, indent=2)
 
 
 def level_path(level_number):
@@ -123,8 +145,11 @@ def main():
     # game_state is "menu" (title screen) or "playing" (gameplay running).
     game_state = "menu"
 
-    level_number = 1
-    level_select_choice = 1  # which level is highlighted on the select screen
+    save_data = load_save()
+    lifetime_catches = save_data["lifetime_catches"]
+
+    level_number = save_data["last_level"]
+    level_select_choice = level_number  # which level is highlighted on the select screen
     walls, squirrel_x, squirrel_y, viper_x, viper_y, viper_patrol_y = reset_level(level_number)
     animation_timer = 0.0
 
@@ -185,6 +210,7 @@ def main():
                     facing_x, facing_y = 1, 0
                     particles = []
                     game_state = "playing"
+                    write_save(level_number, lifetime_catches)
             elif game_state == "paused":
                 if event.type == pygame.KEYDOWN and event.key == pygame.K_q:
                     running = False
@@ -199,6 +225,7 @@ def main():
                     blind_timer = 0.0
                     facing_x, facing_y = 1, 0
                     particles = []
+                    write_save(level_number, lifetime_catches)
                 if event.type == pygame.KEYDOWN and event.key == pygame.K_SPACE:
                     if squirrel_state == "free":
                         base_angle = math.atan2(facing_y, facing_x)
@@ -331,6 +358,8 @@ def main():
                 squirrel_state = "stasis"
                 stasis_timer = STASIS_DURATION
                 score += 1
+                lifetime_catches += 1
+                write_save(level_number, lifetime_catches)
 
         # 3. Draw everything
         screen.fill(BACKGROUND_COLOR)
@@ -343,6 +372,11 @@ def main():
             prompt_surface = font.render("Press ENTER to Play  --  L for Level Select", True, TEXT_COLOR)
             prompt_rect = prompt_surface.get_rect(center=(WINDOW_WIDTH / 2, WINDOW_HEIGHT / 2 + 40))
             screen.blit(prompt_surface, prompt_rect)
+
+            info_text = f"Last played: Level {level_number}   Lifetime catches: {lifetime_catches}"
+            info_surface = font.render(info_text, True, TEXT_COLOR)
+            info_rect = info_surface.get_rect(center=(WINDOW_WIDTH / 2, WINDOW_HEIGHT / 2 + 100))
+            screen.blit(info_surface, info_rect)
 
         elif game_state == "level_select":
             title_surface = title_font.render("Select Level", True, TEXT_COLOR)
