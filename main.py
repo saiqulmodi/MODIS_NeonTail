@@ -43,8 +43,11 @@ def app_data_path(relative_path):
 LEVEL_DIR = resource_path("levels")
 LEVEL_COUNT = 100  # level_001.json through level_100.json
 SAVE_PATH = app_data_path("save.json")
+# Browsers (pygbag, sys.platform == "emscripten") can only play OGG; the desktop
+# game and the PyInstaller .exe keep using the original WAV files.
+AUDIO_EXT = ".ogg" if sys.platform == "emscripten" else ".wav"
 SOUND_DIR = resource_path("assets") / "sounds"
-MUSIC_PATH = resource_path("assets") / "music" / "theme.wav"
+MUSIC_PATH = resource_path("assets") / "music" / f"theme{AUDIO_EXT}"
 SPRITE_DIR = resource_path("assets") / "sprites"
 TILE_WALL_COLOR = (60, 60, 90)  # dark slate -- reads as "structure", not floor
 
@@ -250,11 +253,11 @@ async def main():
     pygame.joystick.init()
     joystick = pygame.joystick.Joystick(0) if pygame.joystick.get_count() > 0 else None
 
-    caught_sound = pygame.mixer.Sound(SOUND_DIR / "caught.wav")
-    kick_sound = pygame.mixer.Sound(SOUND_DIR / "kick.wav")
-    blind_sound = pygame.mixer.Sound(SOUND_DIR / "blind.wav")
-    landmine_sound = pygame.mixer.Sound(SOUND_DIR / "landmine.wav")
-    score_up_sound = pygame.mixer.Sound(SOUND_DIR / "score_up.wav")
+    caught_sound = pygame.mixer.Sound(SOUND_DIR / f"caught{AUDIO_EXT}")
+    kick_sound = pygame.mixer.Sound(SOUND_DIR / f"kick{AUDIO_EXT}")
+    blind_sound = pygame.mixer.Sound(SOUND_DIR / f"blind{AUDIO_EXT}")
+    landmine_sound = pygame.mixer.Sound(SOUND_DIR / f"landmine{AUDIO_EXT}")
+    score_up_sound = pygame.mixer.Sound(SOUND_DIR / f"score_up{AUDIO_EXT}")
 
     pygame.mixer.music.load(MUSIC_PATH)
     pygame.mixer.music.set_volume(0.4)  # quieter than the sound effects
