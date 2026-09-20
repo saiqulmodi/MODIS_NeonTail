@@ -1,11 +1,10 @@
 """
 main.py -- MODIS_NeonTail
 
-Phase 10, Step 3: gravity flips. A new "G" tile zone reverses the
-squirrel's movement controls (up<->down, left<->right) while it's
-standing inside one -- checked against its position entering the frame,
-and only applied to a fresh key press so a stale facing direction never
-gets flipped twice while standing still.
+Phase 10, Step 4: tripwires. A new "X" tile alerts V.I.P.E.R. to the
+squirrel's exact position when crossed, regardless of actual distance --
+this reuses tag_timer, the same "locked on" mechanism Tracker Tags
+introduced in Phase 9, rather than inventing a second alert system.
 """
 
 import json
@@ -63,11 +62,12 @@ def reset_level(level_number):
 
 def load_level(path):
     """Read a level JSON file and turn its character grid into a dict:
-    walls, landmines, jump_pads, shields, time_bubbles, gravity_zones
-    (lists of pygame.Rect) and squirrel_start, viper_start ((x, y)
-    tuples). Tile characters: '#' = wall, 'S' = squirrel start,
+    walls, landmines, jump_pads, shields, time_bubbles, gravity_zones,
+    tripwires (lists of pygame.Rect) and squirrel_start, viper_start
+    ((x, y) tuples). Tile characters: '#' = wall, 'S' = squirrel start,
     'V' = V.I.P.E.R. start, 'W' = whoopee-cushion landmine, 'J' = jump-pad,
-    'H' = shield pickup, 'B' = time bubble, 'G' = gravity flip zone."""
+    'H' = shield pickup, 'B' = time bubble, 'G' = gravity flip zone,
+    'X' = tripwire."""
     with open(path, "r", encoding="utf-8") as level_file:
         data = json.load(level_file)
 
@@ -81,6 +81,7 @@ def load_level(path):
         "shields": [],
         "time_bubbles": [],
         "gravity_zones": [],
+        "tripwires": [],
         "squirrel_start": (0, 0),
         "viper_start": (0, 0),
     }
@@ -105,6 +106,8 @@ def load_level(path):
                 level["time_bubbles"].append(pygame.Rect(x, y, tile_size, tile_size))
             elif tile_char == "G":
                 level["gravity_zones"].append(pygame.Rect(x, y, tile_size, tile_size))
+            elif tile_char == "X":
+                level["tripwires"].append(pygame.Rect(x, y, tile_size, tile_size))
 
     return level
 
@@ -185,6 +188,8 @@ TIME_BUBBLE_SLOW_FACTOR = 0.3  # V.I.P.E.R.'s speed while inside a bubble
 
 GRAVITY_ZONE_COLOR = (220, 60, 60)  # red -- reads as a hazard/warning zone
 
+TRIPWIRE_COLOR = (255, 200, 0)  # amber -- drawn as a taut line, not a filled tile
+
 
 def main():
     pygame.init()
@@ -217,6 +222,7 @@ def main():
     shields = level["shields"]
     time_bubbles = level["time_bubbles"]
     gravity_zones = level["gravity_zones"]
+    tripwires = level["tripwires"]
     squirrel_x, squirrel_y = level["squirrel_start"]
     viper_x, viper_y = level["viper_start"]
     viper_patrol_y = level["viper_patrol_y"]
@@ -287,6 +293,7 @@ def main():
                     shields = level["shields"]
                     time_bubbles = level["time_bubbles"]
                     gravity_zones = level["gravity_zones"]
+                    tripwires = level["tripwires"]
                     squirrel_x, squirrel_y = level["squirrel_start"]
                     viper_x, viper_y = level["viper_start"]
                     viper_patrol_y = level["viper_patrol_y"]
@@ -320,6 +327,7 @@ def main():
                     shields = level["shields"]
                     time_bubbles = level["time_bubbles"]
                     gravity_zones = level["gravity_zones"]
+                    tripwires = level["tripwires"]
                     squirrel_x, squirrel_y = level["squirrel_start"]
                     viper_x, viper_y = level["viper_start"]
                     viper_patrol_y = level["viper_patrol_y"]
@@ -450,6 +458,13 @@ def main():
                 if hit_shield != -1:
                     del shields[hit_shield]
                     has_shield = True
+
+            # Crossing a tripwire alerts V.I.P.E.R. to the squirrel's exact
+            # position regardless of distance, by boosting the same
+            # tag_timer "locked on" system Tracker Tags already use --
+            # reusable, not consumed, so walking back over it re-triggers.
+            if squirrel_state == "free" and squirrel_rect.collidelist(tripwires) != -1:
+                tag_timer = TAG_DURATION
 
             # Brief invulnerability right after a shield absorbs a catch,
             # so the same overlap can't immediately catch you again.
@@ -666,6 +681,9 @@ def main():
 
             for zone in gravity_zones:
                 pygame.draw.rect(screen, GRAVITY_ZONE_COLOR, zone, width=4)
+
+            for wire in tripwires:
+                pygame.draw.line(screen, TRIPWIRE_COLOR, (wire.left, wire.centery), (wire.right, wire.centery), 3)
 
             if decoy is not None:
                 decoy_rect = pygame.Rect(0, 0, SQUIRREL_SIZE, SQUIRREL_SIZE)
