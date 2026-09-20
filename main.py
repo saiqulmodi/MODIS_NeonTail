@@ -1,11 +1,11 @@
 """
 main.py -- MODIS_NeonTail
 
-Phase 11, Step 3: match-over winner screen. A new "match_over" game_state
-replaces the old silent return-to-menu at the end of round 2 -- it
-compares each player's viper-catches (round_catches[1] for Player A,
-who was V.I.P.E.R. in round 2; round_catches[0] for Player B, who was
-V.I.P.E.R. in round 1) and announces a winner or a tie.
+Phase 11, Step 4: gamepad support. pygame.joystick reads one connected
+controller (left stick or D-pad) as an alternative to arrow keys --
+computed once per frame into arrow_left/right/up/down alongside the
+keyboard, then used everywhere arrows are read, so it automatically
+follows whatever Player A currently controls (squirrel or V.I.P.E.R.).
 """
 
 import json
@@ -196,6 +196,8 @@ TELEPORT_COOLDOWN = 6.0  # seconds before the squirrel can teleport again
 
 ROUND_DURATION = 45.0  # seconds per round in a 2-player match
 
+GAMEPAD_DEADZONE = 0.3  # how far a stick must tilt before it counts as a direction
+
 
 def main():
     pygame.init()
@@ -204,6 +206,13 @@ def main():
     clock = pygame.time.Clock()
     font = pygame.font.SysFont(None, 36)  # None = pygame's default built-in font
     title_font = pygame.font.SysFont(None, 72)
+
+    # A connected gamepad, if any, is treated as an alternative to arrow
+    # keys -- so it drives whatever Player A currently controls, whether
+    # that's the squirrel (vs_ai, or round 1 of a 2-player match) or
+    # V.I.P.E.R. (round 2).
+    pygame.joystick.init()
+    joystick = pygame.joystick.Joystick(0) if pygame.joystick.get_count() > 0 else None
 
     caught_sound = pygame.mixer.Sound(SOUND_DIR / "caught.wav")
     kick_sound = pygame.mixer.Sound(SOUND_DIR / "kick.wav")
@@ -496,6 +505,37 @@ def main():
             move_dx = 0
             move_dy = 0
 
+            # A connected gamepad's left stick or D-pad works as an extra
+            # source for the arrow-key directions, checked once here and
+            # reused wherever arrows are read below.
+            gamepad_left = gamepad_right = gamepad_up = gamepad_down = False
+            if joystick is not None:
+                axis_x = joystick.get_axis(0)
+                axis_y = joystick.get_axis(1)
+                if axis_x < -GAMEPAD_DEADZONE:
+                    gamepad_left = True
+                elif axis_x > GAMEPAD_DEADZONE:
+                    gamepad_right = True
+                if axis_y < -GAMEPAD_DEADZONE:
+                    gamepad_up = True
+                elif axis_y > GAMEPAD_DEADZONE:
+                    gamepad_down = True
+                if joystick.get_numhats() > 0:
+                    hat_x, hat_y = joystick.get_hat(0)
+                    if hat_x < 0:
+                        gamepad_left = True
+                    elif hat_x > 0:
+                        gamepad_right = True
+                    if hat_y > 0:  # a hat's y is +1 for up, unlike screen y
+                        gamepad_up = True
+                    elif hat_y < 0:
+                        gamepad_down = True
+
+            arrow_left = keys[pygame.K_LEFT] or gamepad_left
+            arrow_right = keys[pygame.K_RIGHT] or gamepad_right
+            arrow_up = keys[pygame.K_UP] or gamepad_up
+            arrow_down = keys[pygame.K_DOWN] or gamepad_down
+
             # Gravity flip zones reverse the squirrel's controls -- checked
             # against its position entering this frame, before this frame's
             # own movement is applied.
@@ -510,19 +550,19 @@ def main():
             squirrel_uses_wasd = game_mode == "vs_ai" or (game_mode == "two_player" and match_round == 2)
 
             if squirrel_state == "free":
-                if (squirrel_uses_arrows and keys[pygame.K_LEFT]) or (squirrel_uses_wasd and keys[pygame.K_a]):
+                if (squirrel_uses_arrows and arrow_left) or (squirrel_uses_wasd and keys[pygame.K_a]):
                     move_dx -= SQUIRREL_SPEED * delta_time
                     is_moving = True
                     facing_x, facing_y = -1, 0
-                if (squirrel_uses_arrows and keys[pygame.K_RIGHT]) or (squirrel_uses_wasd and keys[pygame.K_d]):
+                if (squirrel_uses_arrows and arrow_right) or (squirrel_uses_wasd and keys[pygame.K_d]):
                     move_dx += SQUIRREL_SPEED * delta_time
                     is_moving = True
                     facing_x, facing_y = 1, 0
-                if (squirrel_uses_arrows and keys[pygame.K_UP]) or (squirrel_uses_wasd and keys[pygame.K_w]):
+                if (squirrel_uses_arrows and arrow_up) or (squirrel_uses_wasd and keys[pygame.K_w]):
                     move_dy -= SQUIRREL_SPEED * delta_time
                     is_moving = True
                     facing_x, facing_y = 0, -1
-                if (squirrel_uses_arrows and keys[pygame.K_DOWN]) or (squirrel_uses_wasd and keys[pygame.K_s]):
+                if (squirrel_uses_arrows and arrow_down) or (squirrel_uses_wasd and keys[pygame.K_s]):
                     move_dy += SQUIRREL_SPEED * delta_time
                     is_moving = True
                     facing_x, facing_y = 0, 1
@@ -651,13 +691,13 @@ def main():
                         if keys[pygame.K_s]:
                             viper_move_dy += VIPER_CHASE_SPEED * viper_speed_multiplier * delta_time
                     else:
-                        if keys[pygame.K_LEFT]:
+                        if arrow_left:
                             viper_move_dx -= VIPER_CHASE_SPEED * viper_speed_multiplier * delta_time
-                        if keys[pygame.K_RIGHT]:
+                        if arrow_right:
                             viper_move_dx += VIPER_CHASE_SPEED * viper_speed_multiplier * delta_time
-                        if keys[pygame.K_UP]:
+                        if arrow_up:
                             viper_move_dy -= VIPER_CHASE_SPEED * viper_speed_multiplier * delta_time
-                        if keys[pygame.K_DOWN]:
+                        if arrow_down:
                             viper_move_dy += VIPER_CHASE_SPEED * viper_speed_multiplier * delta_time
                     viper_x, viper_y = move_with_collision(viper_x, viper_y, viper_move_dx, viper_move_dy, VIPER_SIZE, walls)
             elif squirrel_state == "free" and viper_state == "active":
