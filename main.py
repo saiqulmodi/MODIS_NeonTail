@@ -1,11 +1,13 @@
 """
 main.py -- MODIS_NeonTail
 
-Phase 11, Step 1: basic 2-player mode. game_mode is "vs_ai" (the default)
-or "two_player" -- pressing 2 on the main menu starts a match where
-Player A (arrows) is the squirrel and Player B (WASD) drives V.I.P.E.R.
-directly, replacing its entire chase/patrol/prediction AI with straight
-keyboard input. No round timer or role swap yet -- free play only.
+Phase 11, Step 2: round timer and role swap. A 2-player match is two
+ROUND_DURATION-long rounds; each player keeps their own keys (arrows or
+WASD) the whole match, but which character those keys drive swaps
+between rounds. score is reused as "catches so far this round" in
+two_player mode, reset at the start of each round and archived into
+round_catches when a round ends, so both rounds' tallies survive to be
+compared once the match is over (Step 3).
 """
 
 import json
@@ -194,6 +196,8 @@ TRIPWIRE_COLOR = (255, 200, 0)  # amber -- drawn as a taut line, not a filled ti
 TELEPORT_DISTANCE = 200  # pixels -- a bit farther than a jump-pad launch
 TELEPORT_COOLDOWN = 6.0  # seconds before the squirrel can teleport again
 
+ROUND_DURATION = 45.0  # seconds per round in a 2-player match
+
 
 def main():
     pygame.init()
@@ -217,6 +221,9 @@ def main():
     # game_mode is "vs_ai" (V.I.P.E.R. is AI-controlled, the default) or
     # "two_player" (V.I.P.E.R. is controlled by a second human on WASD).
     game_mode = "vs_ai"
+    match_round = 1              # which round of a 2-player match (1 or 2)
+    round_timer = ROUND_DURATION
+    round_catches = [None, None]  # each round's viper-catches, once it ends
 
     save_data = load_save()
     lifetime_catches = save_data["lifetime_catches"]
@@ -291,6 +298,36 @@ def main():
                     game_state = "level_select"
                 if event.type == pygame.KEYDOWN and event.key == pygame.K_2:
                     game_mode = "two_player"
+                    level = reset_level(level_number)
+                    walls = level["walls"]
+                    landmines = level["landmines"]
+                    jump_pads = level["jump_pads"]
+                    shields = level["shields"]
+                    time_bubbles = level["time_bubbles"]
+                    gravity_zones = level["gravity_zones"]
+                    tripwires = level["tripwires"]
+                    squirrel_x, squirrel_y = level["squirrel_start"]
+                    viper_x, viper_y = level["viper_start"]
+                    viper_patrol_y = level["viper_patrol_y"]
+                    viper_direction = 1
+                    squirrel_state = "free"
+                    stasis_timer = 0.0
+                    viper_state = "active"
+                    blind_timer = 0.0
+                    stun_timer = 0.0
+                    tag_timer = 0.0
+                    jump_cooldown_timer = 0.0
+                    teleport_cooldown_timer = 0.0
+                    has_shield = False
+                    invulnerable_timer = 0.0
+                    facing_x, facing_y = 1, 0
+                    particles = []
+                    taunts = []
+                    decoy = None
+                    score = 0
+                    match_round = 1
+                    round_timer = ROUND_DURATION
+                    round_catches = [None, None]
                     game_state = "playing"
                     pygame.mixer.music.play(loops=-1)
             elif game_state == "level_select":
@@ -402,6 +439,53 @@ def main():
         # the menu screen doesn't move or count down behind the scenes.
         if game_state == "playing":
             game_time += delta_time
+
+            # Round timer and role swap -- only relevant in a 2-player
+            # match. score doubles as "catches so far this round" here,
+            # so it gets archived into round_catches before being zeroed
+            # for the next round.
+            if game_mode == "two_player":
+                round_timer -= delta_time
+                if round_timer <= 0:
+                    if match_round == 1:
+                        round_catches[0] = score
+                        match_round = 2
+                        level = reset_level(level_number)
+                        walls = level["walls"]
+                        landmines = level["landmines"]
+                        jump_pads = level["jump_pads"]
+                        shields = level["shields"]
+                        time_bubbles = level["time_bubbles"]
+                        gravity_zones = level["gravity_zones"]
+                        tripwires = level["tripwires"]
+                        squirrel_x, squirrel_y = level["squirrel_start"]
+                        viper_x, viper_y = level["viper_start"]
+                        viper_patrol_y = level["viper_patrol_y"]
+                        viper_direction = 1
+                        squirrel_state = "free"
+                        stasis_timer = 0.0
+                        viper_state = "active"
+                        blind_timer = 0.0
+                        stun_timer = 0.0
+                        tag_timer = 0.0
+                        jump_cooldown_timer = 0.0
+                        teleport_cooldown_timer = 0.0
+                        has_shield = False
+                        invulnerable_timer = 0.0
+                        facing_x, facing_y = 1, 0
+                        particles = []
+                        taunts = []
+                        decoy = None
+                        score = 0
+                        round_timer = ROUND_DURATION
+                    else:
+                        # Round 2 just ended -- the match-over winner
+                        # screen comes in Step 3. For now, just return to
+                        # the main menu.
+                        round_catches[1] = score
+                        game_mode = "vs_ai"
+                        game_state = "menu"
+
             keys = pygame.key.get_pressed()
             is_moving = False
             move_dx = 0
@@ -788,8 +872,15 @@ def main():
             screen.blit(dodge_surface, (20, 140))
 
             if game_mode == "two_player":
-                mode_surface = font.render("2-Player: Arrows = Squirrel, WASD = V.I.P.E.R.", True, TEXT_COLOR)
+                if match_round == 1:
+                    role_text = "Round 1/2: Arrows(A) = Squirrel, WASD(B) = V.I.P.E.R."
+                else:
+                    role_text = "Round 2/2: Arrows(A) = V.I.P.E.R., WASD(B) = Squirrel"
+                mode_surface = font.render(role_text, True, TEXT_COLOR)
                 screen.blit(mode_surface, (20, 180))
+
+                round_time_surface = font.render(f"Round time left: {max(0, int(round_timer))}s", True, TEXT_COLOR)
+                screen.blit(round_time_surface, (20, 220))
 
             if game_state == "paused":
                 # A semi-transparent black rectangle drawn over everything
