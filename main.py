@@ -1,10 +1,12 @@
 """
 main.py -- MODIS_NeonTail
 
-Post-completion enhancement, Step 3: a floating power-up. A new "F" tile
-grants FLOATING_DURATION seconds of immunity to gravity-flip zones and
-tripwires once collected -- walls still block movement, this is hazard
-immunity, not flight.
+Post-completion enhancement, Step 4: real squirrel/V.I.P.E.R. art.
+assets/sprites/*.png (self-drawn with pygame's own primitives, not
+downloaded) replace the plain colored rectangles. V.I.P.E.R.'s
+blinded/stunned tints are precomputed once via BLEND_RGBA_MULT rather
+than re-copying the surface every frame. Pressing T also briefly swaps
+the squirrel to a bigger-tailed "tail flag" pose.
 """
 
 import json
@@ -42,6 +44,7 @@ LEVEL_COUNT = 100  # level_001.json through level_100.json
 SAVE_PATH = app_data_path("save.json")
 SOUND_DIR = resource_path("assets") / "sounds"
 MUSIC_PATH = resource_path("assets") / "music" / "theme.wav"
+SPRITE_DIR = resource_path("assets") / "sprites"
 TILE_WALL_COLOR = (60, 60, 90)  # dark slate -- reads as "structure", not floor
 
 
@@ -218,6 +221,7 @@ TRIPWIRE_COLOR = (255, 200, 0)  # amber -- drawn as a taut line, not a filled ti
 
 TELEPORT_DISTANCE = 200  # pixels -- a bit farther than a jump-pad launch
 TELEPORT_COOLDOWN = 6.0  # seconds before the squirrel can teleport again
+TAIL_FLAG_DURATION = 0.4  # seconds the tail-flag pose shows after a teleport
 
 ROUND_DURATION = 45.0  # seconds per round in a 2-player match
 
@@ -254,6 +258,18 @@ def main():
     pygame.mixer.music.load(MUSIC_PATH)
     pygame.mixer.music.set_volume(0.4)  # quieter than the sound effects
 
+    squirrel_sprite = pygame.image.load(SPRITE_DIR / "squirrel.png").convert_alpha()
+    squirrel_tail_flag_sprite = pygame.image.load(SPRITE_DIR / "squirrel_tail_flag.png").convert_alpha()
+    viper_sprite = pygame.image.load(SPRITE_DIR / "viper.png").convert_alpha()
+
+    # Tinted once at startup rather than every frame -- BLEND_RGBA_MULT
+    # multiplies each pixel's color by the fill color, so a copy of the
+    # sprite becomes a gray or pink silhouette without losing its shape.
+    viper_sprite_blinded = viper_sprite.copy()
+    viper_sprite_blinded.fill(VIPER_BLINDED_COLOR, special_flags=pygame.BLEND_RGBA_MULT)
+    viper_sprite_stunned = viper_sprite.copy()
+    viper_sprite_stunned.fill(WHOOPEE_COLOR, special_flags=pygame.BLEND_RGBA_MULT)
+
     # game_state is "menu" (title screen) or "playing" (gameplay running).
     game_state = "menu"
 
@@ -284,6 +300,7 @@ def main():
     jump_cooldown_timer = 0.0
     teleport_cooldown_timer = 0.0
     floating_timer = 0.0
+    tail_flag_timer = 0.0
     has_shield = False
     invulnerable_timer = 0.0
     animation_timer = 0.0
@@ -364,6 +381,7 @@ def main():
                     jump_cooldown_timer = 0.0
                     teleport_cooldown_timer = 0.0
                     floating_timer = 0.0
+                    tail_flag_timer = 0.0
                     has_shield = False
                     invulnerable_timer = 0.0
                     facing_x, facing_y = 1, 0
@@ -405,6 +423,7 @@ def main():
                     jump_cooldown_timer = 0.0
                     teleport_cooldown_timer = 0.0
                     floating_timer = 0.0
+                    tail_flag_timer = 0.0
                     has_shield = False
                     invulnerable_timer = 0.0
                     facing_x, facing_y = 1, 0
@@ -447,6 +466,7 @@ def main():
                     jump_cooldown_timer = 0.0
                     teleport_cooldown_timer = 0.0
                     floating_timer = 0.0
+                    tail_flag_timer = 0.0
                     has_shield = False
                     invulnerable_timer = 0.0
                     facing_x, facing_y = 1, 0
@@ -478,6 +498,7 @@ def main():
                     jump_cooldown_timer = 0.0
                     teleport_cooldown_timer = 0.0
                     floating_timer = 0.0
+                    tail_flag_timer = 0.0
                     has_shield = False
                     invulnerable_timer = 0.0
                     facing_x, facing_y = 1, 0
@@ -519,6 +540,7 @@ def main():
                         squirrel_x = max(0, min(WINDOW_WIDTH - SQUIRREL_SIZE, squirrel_x))
                         squirrel_y = max(0, min(WINDOW_HEIGHT - SQUIRREL_SIZE, squirrel_y))
                         teleport_cooldown_timer = TELEPORT_COOLDOWN
+                        tail_flag_timer = TAIL_FLAG_DURATION
 
         # 2. Update game state -- gameplay only advances while playing, so
         # the menu screen doesn't move or count down behind the scenes.
@@ -564,6 +586,7 @@ def main():
                         jump_cooldown_timer = 0.0
                         teleport_cooldown_timer = 0.0
                         floating_timer = 0.0
+                        tail_flag_timer = 0.0
                         has_shield = False
                         invulnerable_timer = 0.0
                         facing_x, facing_y = 1, 0
@@ -681,6 +704,7 @@ def main():
             # while the squirrel is still standing on it.
             jump_cooldown_timer -= delta_time
             teleport_cooldown_timer -= delta_time
+            tail_flag_timer -= delta_time
             if (
                 squirrel_state == "free"
                 and jump_cooldown_timer <= 0
@@ -1006,15 +1030,27 @@ def main():
                 pygame.draw.line(screen, TRIPWIRE_COLOR, (wire.left, wire.centery), (wire.right, wire.centery), 3)
 
             if decoy is not None:
-                decoy_rect = pygame.Rect(0, 0, SQUIRREL_SIZE, SQUIRREL_SIZE)
-                decoy_rect.center = (decoy["x"], decoy["y"])
-                pygame.draw.rect(screen, SQUIRREL_COLOR, decoy_rect, width=3)
+                # A translucent copy of the real sprite -- still visibly
+                # "a squirrel" at a glance, but ghostly enough to read as
+                # a fake once you look closely, the way a decoy should.
+                decoy_sprite = squirrel_sprite.copy()
+                decoy_sprite.set_alpha(120)
+                decoy_rect = decoy_sprite.get_rect(center=(decoy["x"], decoy["y"]))
+                screen.blit(decoy_sprite, decoy_rect)
 
             if squirrel_state == "stasis":
                 bubble_center = (int(squirrel_x + SQUIRREL_SIZE / 2), int(squirrel_y + SQUIRREL_SIZE / 2))
                 pygame.draw.circle(screen, STASIS_BUBBLE_COLOR, bubble_center, SQUIRREL_SIZE)
             else:
-                pygame.draw.rect(screen, SQUIRREL_COLOR, squirrel_rect)
+                # The tail-flag pose briefly replaces the normal sprite
+                # right after a teleport dodge; both get flipped to face
+                # whichever horizontal direction the squirrel last moved.
+                current_squirrel_sprite = squirrel_tail_flag_sprite if tail_flag_timer > 0 else squirrel_sprite
+                if facing_x < 0:
+                    current_squirrel_sprite = pygame.transform.flip(current_squirrel_sprite, True, False)
+                squirrel_sprite_rect = current_squirrel_sprite.get_rect(center=squirrel_rect.center)
+                screen.blit(current_squirrel_sprite, squirrel_sprite_rect)
+
                 if has_shield:
                     pygame.draw.rect(screen, SHIELD_COLOR, squirrel_rect.inflate(8, 8), width=3)
                 elif invulnerable_timer > 0:
@@ -1025,12 +1061,13 @@ def main():
                     pygame.draw.rect(screen, FLOATING_COLOR, squirrel_rect.inflate(16, 16), width=3)
 
             if viper_state == "blinded":
-                viper_color = VIPER_BLINDED_COLOR
+                current_viper_sprite = viper_sprite_blinded
             elif viper_state == "stunned":
-                viper_color = WHOOPEE_COLOR
+                current_viper_sprite = viper_sprite_stunned
             else:
-                viper_color = VIPER_COLOR
-            pygame.draw.rect(screen, viper_color, viper_rect)
+                current_viper_sprite = viper_sprite
+            viper_sprite_rect = current_viper_sprite.get_rect(center=viper_rect.center)
+            screen.blit(current_viper_sprite, viper_sprite_rect)
 
             for particle in particles:
                 pygame.draw.circle(screen, PARTICLE_COLOR, (int(particle["x"]), int(particle["y"])), PARTICLE_SIZE)
