@@ -1,13 +1,11 @@
 """
 main.py -- MODIS_NeonTail
 
-Phase 11, Step 2: round timer and role swap. A 2-player match is two
-ROUND_DURATION-long rounds; each player keeps their own keys (arrows or
-WASD) the whole match, but which character those keys drive swaps
-between rounds. score is reused as "catches so far this round" in
-two_player mode, reset at the start of each round and archived into
-round_catches when a round ends, so both rounds' tallies survive to be
-compared once the match is over (Step 3).
+Phase 11, Step 3: match-over winner screen. A new "match_over" game_state
+replaces the old silent return-to-menu at the end of round 2 -- it
+compares each player's viper-catches (round_catches[1] for Player A,
+who was V.I.P.E.R. in round 2; round_catches[0] for Player B, who was
+V.I.P.E.R. in round 1) and announces a winner or a tie.
 """
 
 import json
@@ -288,6 +286,9 @@ def main():
                     pygame.mixer.music.unpause()
                 elif game_state == "level_select":
                     game_state = "menu"
+                elif game_state == "match_over":
+                    game_mode = "vs_ai"
+                    game_state = "menu"
             if game_state == "menu":
                 if event.type == pygame.KEYDOWN and event.key in (pygame.K_RETURN, pygame.K_KP_ENTER):
                     game_mode = "vs_ai"
@@ -367,6 +368,10 @@ def main():
                     game_state = "playing"
                     write_save(level_number, lifetime_catches)
                     pygame.mixer.music.play(loops=-1)
+            elif game_state == "match_over":
+                if event.type == pygame.KEYDOWN and event.key in (pygame.K_RETURN, pygame.K_KP_ENTER):
+                    game_mode = "vs_ai"
+                    game_state = "menu"
             elif game_state == "paused":
                 if event.type == pygame.KEYDOWN and event.key == pygame.K_q:
                     running = False
@@ -479,12 +484,12 @@ def main():
                         score = 0
                         round_timer = ROUND_DURATION
                     else:
-                        # Round 2 just ended -- the match-over winner
-                        # screen comes in Step 3. For now, just return to
-                        # the main menu.
+                        # Round 2 just ended -- show the winner screen.
+                        # game_mode stays "two_player" until the player
+                        # leaves match_over, since the screen still needs
+                        # to know it was a 2-player match to draw itself.
                         round_catches[1] = score
-                        game_mode = "vs_ai"
-                        game_state = "menu"
+                        game_state = "match_over"
 
             keys = pygame.key.get_pressed()
             is_moving = False
@@ -790,6 +795,32 @@ def main():
             screen.blit(choice_surface, choice_rect)
 
             hint_surface = font.render("Left/Right to choose, Enter to start, Esc to go back", True, TEXT_COLOR)
+            hint_rect = hint_surface.get_rect(center=(WINDOW_WIDTH / 2, WINDOW_HEIGHT / 2 + 80))
+            screen.blit(hint_surface, hint_rect)
+
+        elif game_state == "match_over":
+            # Player A was V.I.P.E.R. in round 2, Player B in round 1 --
+            # whoever caught more while chasing wins.
+            player_a_catches = round_catches[1] if round_catches[1] is not None else 0
+            player_b_catches = round_catches[0] if round_catches[0] is not None else 0
+
+            if player_a_catches > player_b_catches:
+                result_text = "Player A Wins!"
+            elif player_b_catches > player_a_catches:
+                result_text = "Player B Wins!"
+            else:
+                result_text = "It's a Tie!"
+
+            title_surface = title_font.render(result_text, True, TEXT_COLOR)
+            title_rect = title_surface.get_rect(center=(WINDOW_WIDTH / 2, WINDOW_HEIGHT / 2 - 80))
+            screen.blit(title_surface, title_rect)
+
+            scores_text = f"Player A viper-catches: {player_a_catches}   Player B viper-catches: {player_b_catches}"
+            scores_surface = font.render(scores_text, True, TEXT_COLOR)
+            scores_rect = scores_surface.get_rect(center=(WINDOW_WIDTH / 2, WINDOW_HEIGHT / 2))
+            screen.blit(scores_surface, scores_rect)
+
+            hint_surface = font.render("Enter or Esc to return to the menu", True, TEXT_COLOR)
             hint_rect = hint_surface.get_rect(center=(WINDOW_WIDTH / 2, WINDOW_HEIGHT / 2 + 80))
             screen.blit(hint_surface, hint_rect)
 
