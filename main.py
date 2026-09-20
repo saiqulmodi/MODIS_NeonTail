@@ -1,12 +1,11 @@
 """
 main.py -- MODIS_NeonTail
 
-Phase 10, Step 2: time bubbles. A new "B" tile zone drastically slows
-V.I.P.E.R. while it's standing inside one. load_level()/reset_level()
-were refactored to return a dict instead of a growing positional tuple,
-so adding this (and future) per-level lists doesn't touch every call
-site's unpacking order -- the exact kind of mismatch that caused the
-VIPER_PATROL_Y bug back in Phase 6.
+Phase 10, Step 3: gravity flips. A new "G" tile zone reverses the
+squirrel's movement controls (up<->down, left<->right) while it's
+standing inside one -- checked against its position entering the frame,
+and only applied to a fresh key press so a stale facing direction never
+gets flipped twice while standing still.
 """
 
 import json
@@ -64,11 +63,11 @@ def reset_level(level_number):
 
 def load_level(path):
     """Read a level JSON file and turn its character grid into a dict:
-    walls, landmines, jump_pads, shields, time_bubbles (lists of
-    pygame.Rect) and squirrel_start, viper_start ((x, y) tuples). Tile
-    characters: '#' = wall, 'S' = squirrel start, 'V' = V.I.P.E.R. start,
-    'W' = whoopee-cushion landmine, 'J' = jump-pad, 'H' = shield pickup,
-    'B' = time bubble."""
+    walls, landmines, jump_pads, shields, time_bubbles, gravity_zones
+    (lists of pygame.Rect) and squirrel_start, viper_start ((x, y)
+    tuples). Tile characters: '#' = wall, 'S' = squirrel start,
+    'V' = V.I.P.E.R. start, 'W' = whoopee-cushion landmine, 'J' = jump-pad,
+    'H' = shield pickup, 'B' = time bubble, 'G' = gravity flip zone."""
     with open(path, "r", encoding="utf-8") as level_file:
         data = json.load(level_file)
 
@@ -81,6 +80,7 @@ def load_level(path):
         "jump_pads": [],
         "shields": [],
         "time_bubbles": [],
+        "gravity_zones": [],
         "squirrel_start": (0, 0),
         "viper_start": (0, 0),
     }
@@ -103,6 +103,8 @@ def load_level(path):
                 level["shields"].append(pygame.Rect(x, y, tile_size, tile_size))
             elif tile_char == "B":
                 level["time_bubbles"].append(pygame.Rect(x, y, tile_size, tile_size))
+            elif tile_char == "G":
+                level["gravity_zones"].append(pygame.Rect(x, y, tile_size, tile_size))
 
     return level
 
@@ -181,6 +183,8 @@ PREDICTION_TIME = 0.3  # seconds V.I.P.E.R. aims ahead of the squirrel's current
 TIME_BUBBLE_COLOR = (150, 110, 230)  # violet -- reads as a distortion field
 TIME_BUBBLE_SLOW_FACTOR = 0.3  # V.I.P.E.R.'s speed while inside a bubble
 
+GRAVITY_ZONE_COLOR = (220, 60, 60)  # red -- reads as a hazard/warning zone
+
 
 def main():
     pygame.init()
@@ -212,6 +216,7 @@ def main():
     jump_pads = level["jump_pads"]
     shields = level["shields"]
     time_bubbles = level["time_bubbles"]
+    gravity_zones = level["gravity_zones"]
     squirrel_x, squirrel_y = level["squirrel_start"]
     viper_x, viper_y = level["viper_start"]
     viper_patrol_y = level["viper_patrol_y"]
@@ -281,6 +286,7 @@ def main():
                     jump_pads = level["jump_pads"]
                     shields = level["shields"]
                     time_bubbles = level["time_bubbles"]
+                    gravity_zones = level["gravity_zones"]
                     squirrel_x, squirrel_y = level["squirrel_start"]
                     viper_x, viper_y = level["viper_start"]
                     viper_patrol_y = level["viper_patrol_y"]
@@ -313,6 +319,7 @@ def main():
                     jump_pads = level["jump_pads"]
                     shields = level["shields"]
                     time_bubbles = level["time_bubbles"]
+                    gravity_zones = level["gravity_zones"]
                     squirrel_x, squirrel_y = level["squirrel_start"]
                     viper_x, viper_y = level["viper_start"]
                     viper_patrol_y = level["viper_patrol_y"]
@@ -365,6 +372,11 @@ def main():
             move_dx = 0
             move_dy = 0
 
+            # Gravity flip zones reverse the squirrel's controls -- checked
+            # against its position entering this frame, before this frame's
+            # own movement is applied.
+            controls_flipped = pygame.Rect(squirrel_x, squirrel_y, SQUIRREL_SIZE, SQUIRREL_SIZE).collidelist(gravity_zones) != -1
+
             # No player input while caught -- the squirrel is frozen in the bubble.
             if squirrel_state == "free":
                 if keys[pygame.K_LEFT] or keys[pygame.K_a]:
@@ -383,6 +395,14 @@ def main():
                     move_dy += SQUIRREL_SPEED * delta_time
                     is_moving = True
                     facing_x, facing_y = 0, 1
+
+                # Reverse the actual movement and facing (not the raw key
+                # mapping above) -- only when a key was pressed this frame,
+                # so a stale facing from an earlier frame never gets flipped
+                # a second time while the squirrel is standing still.
+                if is_moving and controls_flipped:
+                    move_dx, move_dy = -move_dx, -move_dy
+                    facing_x, facing_y = -facing_x, -facing_y
 
             # Recover actual pixels-per-second velocity from this frame's
             # already-delta_time-scaled movement -- V.I.P.E.R. uses this to
@@ -643,6 +663,9 @@ def main():
 
             for bubble in time_bubbles:
                 pygame.draw.circle(screen, TIME_BUBBLE_COLOR, bubble.center, bubble.width // 2, width=3)
+
+            for zone in gravity_zones:
+                pygame.draw.rect(screen, GRAVITY_ZONE_COLOR, zone, width=4)
 
             if decoy is not None:
                 decoy_rect = pygame.Rect(0, 0, SQUIRREL_SIZE, SQUIRREL_SIZE)
