@@ -1,9 +1,11 @@
 """
 main.py -- MODIS_NeonTail
 
-Phase 12 polish: a P key to go to the previous level, mirroring N's
-"next level" -- previously there was no way back to an earlier level
-short of cycling all the way around.
+Post-completion enhancement, Step 2: a bright ascending chime
+(score_up.wav, synthesized) plays alongside the existing "caught" sound
+whenever score increases -- pygame.mixer automatically allocates a free
+channel for each .play() call, so both sounds layer instead of cutting
+each other off.
 """
 
 import json
@@ -219,6 +221,9 @@ ROUND_DURATION = 45.0  # seconds per round in a 2-player match
 
 GAMEPAD_DEADZONE = 0.3  # how far a stick must tilt before it counts as a direction
 
+SPEED_SCALE_PER_CATCH = 0.03  # +3% speed for both squirrel and V.I.P.E.R. per catch
+MAX_SPEED_MULTIPLIER = 1.8    # caps the escalation so it never becomes unplayable
+
 
 def main():
     pygame.init()
@@ -239,6 +244,7 @@ def main():
     kick_sound = pygame.mixer.Sound(SOUND_DIR / "kick.wav")
     blind_sound = pygame.mixer.Sound(SOUND_DIR / "blind.wav")
     landmine_sound = pygame.mixer.Sound(SOUND_DIR / "landmine.wav")
+    score_up_sound = pygame.mixer.Sound(SOUND_DIR / "score_up.wav")
 
     pygame.mixer.music.load(MUSIC_PATH)
     pygame.mixer.music.set_volume(0.4)  # quieter than the sound effects
@@ -504,6 +510,13 @@ def main():
         if game_state == "playing":
             game_time += delta_time
 
+            # Both the squirrel and V.I.P.E.R. get faster as score (catches
+            # this session/round) rises, capped so it never spirals out of
+            # control. Applying the SAME multiplier to both keeps V.I.P.E.R.
+            # always slower than the squirrel, preserving the "you can
+            # always outrun it" rule from Phase 3.
+            speed_multiplier_from_score = min(1 + score * SPEED_SCALE_PER_CATCH, MAX_SPEED_MULTIPLIER)
+
             # Round timer and role swap -- only relevant in a 2-player
             # match. score doubles as "catches so far this round" here,
             # so it gets archived into round_catches before being zeroed
@@ -601,19 +614,19 @@ def main():
 
             if squirrel_state == "free":
                 if (squirrel_uses_arrows and arrow_left) or (squirrel_uses_wasd and keys[pygame.K_a]):
-                    move_dx -= SQUIRREL_SPEED * delta_time
+                    move_dx -= SQUIRREL_SPEED * speed_multiplier_from_score * delta_time
                     is_moving = True
                     facing_x, facing_y = -1, 0
                 if (squirrel_uses_arrows and arrow_right) or (squirrel_uses_wasd and keys[pygame.K_d]):
-                    move_dx += SQUIRREL_SPEED * delta_time
+                    move_dx += SQUIRREL_SPEED * speed_multiplier_from_score * delta_time
                     is_moving = True
                     facing_x, facing_y = 1, 0
                 if (squirrel_uses_arrows and arrow_up) or (squirrel_uses_wasd and keys[pygame.K_w]):
-                    move_dy -= SQUIRREL_SPEED * delta_time
+                    move_dy -= SQUIRREL_SPEED * speed_multiplier_from_score * delta_time
                     is_moving = True
                     facing_x, facing_y = 0, -1
                 if (squirrel_uses_arrows and arrow_down) or (squirrel_uses_wasd and keys[pygame.K_s]):
-                    move_dy += SQUIRREL_SPEED * delta_time
+                    move_dy += SQUIRREL_SPEED * speed_multiplier_from_score * delta_time
                     is_moving = True
                     facing_x, facing_y = 0, 1
 
@@ -716,7 +729,7 @@ def main():
             # -- checked against its position entering this frame, before
             # any of this frame's own movement is applied.
             in_time_bubble = pygame.Rect(viper_x, viper_y, VIPER_SIZE, VIPER_SIZE).collidelist(time_bubbles) != -1
-            viper_speed_multiplier = TIME_BUBBLE_SLOW_FACTOR if in_time_bubble else 1.0
+            viper_speed_multiplier = (TIME_BUBBLE_SLOW_FACTOR if in_time_bubble else 1.0) * speed_multiplier_from_score
 
             if viper_state == "stunned":
                 pass  # frozen in place -- no movement at all
@@ -873,6 +886,7 @@ def main():
                     lifetime_catches += 1
                     write_save(level_number, lifetime_catches)
                     caught_sound.play()
+                    score_up_sound.play()
 
         # 3. Draw everything
         screen.fill(BACKGROUND_COLOR)
