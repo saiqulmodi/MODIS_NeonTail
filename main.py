@@ -1,11 +1,9 @@
 """
 main.py -- MODIS_NeonTail
 
-Phase 11, Step 4: gamepad support. pygame.joystick reads one connected
-controller (left stick or D-pad) as an alternative to arrow keys --
-computed once per frame into arrow_left/right/up/down alongside the
-keyboard, then used everywhere arrows are read, so it automatically
-follows whatever Player A currently controls (squirrel or V.I.P.E.R.).
+Phase 12 polish: a P key to go to the previous level, mirroring N's
+"next level" -- previously there was no way back to an earlier level
+short of cycling all the way around.
 """
 
 import json
@@ -410,6 +408,35 @@ def main():
             elif game_state == "playing":
                 if event.type == pygame.KEYDOWN and event.key == pygame.K_n:
                     level_number = level_number % LEVEL_COUNT + 1  # wraps 10 -> 1
+                    level = reset_level(level_number)
+                    walls = level["walls"]
+                    landmines = level["landmines"]
+                    jump_pads = level["jump_pads"]
+                    shields = level["shields"]
+                    time_bubbles = level["time_bubbles"]
+                    gravity_zones = level["gravity_zones"]
+                    tripwires = level["tripwires"]
+                    squirrel_x, squirrel_y = level["squirrel_start"]
+                    viper_x, viper_y = level["viper_start"]
+                    viper_patrol_y = level["viper_patrol_y"]
+                    viper_direction = 1
+                    squirrel_state = "free"
+                    stasis_timer = 0.0
+                    viper_state = "active"
+                    blind_timer = 0.0
+                    stun_timer = 0.0
+                    tag_timer = 0.0
+                    jump_cooldown_timer = 0.0
+                    teleport_cooldown_timer = 0.0
+                    has_shield = False
+                    invulnerable_timer = 0.0
+                    facing_x, facing_y = 1, 0
+                    particles = []
+                    taunts = []
+                    decoy = None
+                    write_save(level_number, lifetime_catches)
+                if event.type == pygame.KEYDOWN and event.key == pygame.K_p:
+                    level_number = (level_number - 2) % LEVEL_COUNT + 1  # wraps 1 -> LEVEL_COUNT
                     level = reset_level(level_number)
                     walls = level["walls"]
                     landmines = level["landmines"]
@@ -971,7 +998,7 @@ def main():
             timer_surface = font.render(f"Time: {minutes:02d}:{seconds:02d}", True, TEXT_COLOR)
             screen.blit(timer_surface, (20, 60))
 
-            level_surface = font.render(f"Level: {level_number}/{LEVEL_COUNT} (N to switch)", True, TEXT_COLOR)
+            level_surface = font.render(f"Level: {level_number}/{LEVEL_COUNT} (N: next, P: previous)", True, TEXT_COLOR)
             screen.blit(level_surface, (20, 100))
 
             if teleport_cooldown_timer > 0:
