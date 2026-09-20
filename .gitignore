@@ -2,3 +2,5 @@
 __pycache__/
 save.json
 .pytest_cache/
+build/
+dist/

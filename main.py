@@ -11,15 +11,38 @@ follows whatever Player A currently controls (squirrel or V.I.P.E.R.).
 import json
 import math
 import random
+import sys
 from pathlib import Path
 
 import pygame
 
-LEVEL_DIR = Path(__file__).parent / "levels"
+
+def resource_path(relative_path):
+    """Path to a bundled, read-only resource (levels, sounds) -- works
+    both running as a normal script and packaged by PyInstaller, which
+    extracts bundled files into a temporary sys._MEIPASS folder at
+    startup instead of leaving them next to the .exe."""
+    base = Path(getattr(sys, "_MEIPASS", Path(__file__).parent))
+    return base / relative_path
+
+
+def app_data_path(relative_path):
+    """Path to a file that must persist after the app closes (save.json).
+    Unlike resource_path(), this must NOT use sys._MEIPASS -- PyInstaller
+    deletes that temp folder on exit, so anything written there would be
+    lost. Sits next to the .exe when frozen, next to main.py otherwise."""
+    if getattr(sys, "frozen", False):
+        base = Path(sys.executable).parent
+    else:
+        base = Path(__file__).parent
+    return base / relative_path
+
+
+LEVEL_DIR = resource_path("levels")
 LEVEL_COUNT = 100  # level_001.json through level_100.json
-SAVE_PATH = Path(__file__).parent / "save.json"
-SOUND_DIR = Path(__file__).parent / "assets" / "sounds"
-MUSIC_PATH = Path(__file__).parent / "assets" / "music" / "theme.wav"
+SAVE_PATH = app_data_path("save.json")
+SOUND_DIR = resource_path("assets") / "sounds"
+MUSIC_PATH = resource_path("assets") / "music" / "theme.wav"
 TILE_WALL_COLOR = (60, 60, 90)  # dark slate -- reads as "structure", not floor
 
 
