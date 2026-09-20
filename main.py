@@ -9,6 +9,7 @@ than re-copying the surface every frame. Pressing T also briefly swaps
 the squirrel to a bigger-tailed "tail flag" pose.
 """
 
+import asyncio
 import json
 import math
 import random
@@ -234,7 +235,7 @@ FLOATING_COLOR = (200, 240, 255)  # pale cyan -- reads as "light/airborne"
 FLOATING_DURATION = 5.0  # seconds of hazard immunity after picking one up
 
 
-def main():
+async def main():
     pygame.init()
     screen = pygame.display.set_mode((WINDOW_WIDTH, WINDOW_HEIGHT))
     pygame.display.set_caption("MODIS_NeonTail")
@@ -1129,8 +1130,14 @@ def main():
 
         pygame.display.flip()
 
+        # Required by pygbag's browser build -- yields control back to the
+        # browser's own event loop once per frame, since a browser can't
+        # be blocked synchronously the way a desktop OS allows. Harmless
+        # on desktop too, which is why this isn't behind a special case.
+        await asyncio.sleep(0)
+
     pygame.quit()
 
 
 if __name__ == "__main__":
-    main()
+    asyncio.run(main())
