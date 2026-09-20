@@ -58,6 +58,21 @@ pyinstaller --onefile --windowed --name MODIS_NeonTail --add-data "levels;levels
 
 The built executable appears in `dist/`. (`MODIS_NeonTail.spec` in this repo already captures these settings — running `pyinstaller MODIS_NeonTail.spec` works too.)
 
+## Playing in the browser (web build)
+
+The game also builds to WebAssembly with [pygbag](https://pypi.org/project/pygbag/), so it can run in a browser tab with no install. `main()` is `async` and awaits once per frame, which the browser needs; desktop play is unaffected.
+
+```bash
+pip install pygbag
+# build from a clean folder containing only main.py, levels/ and assets/
+# (pygbag bundles everything in the folder it is pointed at, including venv/)
+pygbag --build path\to\that\folder
+```
+
+The result appears in `build/web/` inside that folder. Serve it with any static web server (for example `python -m http.server 8000 --directory build/web`) and open `index.html`. The browser asks for one click before it will allow sound.
+
+Notes: browsers can only play OGG audio, so every sound has an `.ogg` copy next to its `.wav` (the game picks `.ogg` automatically in the browser and `.wav` on desktop). The runtime is downloaded from the pygbag CDN on first load, and `save.json` lives in the browser's temporary storage, so progress is not kept between visits.
+
 ## Running the tests
 
 ```bash

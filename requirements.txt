@@ -1,3 +1,4 @@
 ﻿pygame-ce==2.5.8
 pytest==9.1.1        # for running the tests/ suite
 pyinstaller==6.22.3  # for building the standalone .exe, not needed just to play
+pygbag==0.9.3        # for building the browser (WebAssembly) version, not needed just to play
