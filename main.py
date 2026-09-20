@@ -1,11 +1,10 @@
 """
 main.py -- MODIS_NeonTail
 
-Post-completion enhancement, Step 2: a bright ascending chime
-(score_up.wav, synthesized) plays alongside the existing "caught" sound
-whenever score increases -- pygame.mixer automatically allocates a free
-channel for each .play() call, so both sounds layer instead of cutting
-each other off.
+Post-completion enhancement, Step 3: a floating power-up. A new "F" tile
+grants FLOATING_DURATION seconds of immunity to gravity-flip zones and
+tripwires once collected -- walls still block movement, this is hazard
+immunity, not flight.
 """
 
 import json
@@ -87,11 +86,11 @@ def reset_level(level_number):
 def load_level(path):
     """Read a level JSON file and turn its character grid into a dict:
     walls, landmines, jump_pads, shields, time_bubbles, gravity_zones,
-    tripwires (lists of pygame.Rect) and squirrel_start, viper_start
-    ((x, y) tuples). Tile characters: '#' = wall, 'S' = squirrel start,
-    'V' = V.I.P.E.R. start, 'W' = whoopee-cushion landmine, 'J' = jump-pad,
-    'H' = shield pickup, 'B' = time bubble, 'G' = gravity flip zone,
-    'X' = tripwire."""
+    tripwires, floating_pickups (lists of pygame.Rect) and squirrel_start,
+    viper_start ((x, y) tuples). Tile characters: '#' = wall,
+    'S' = squirrel start, 'V' = V.I.P.E.R. start, 'W' = whoopee-cushion
+    landmine, 'J' = jump-pad, 'H' = shield pickup, 'B' = time bubble,
+    'G' = gravity flip zone, 'X' = tripwire, 'F' = floating pickup."""
     with open(path, "r", encoding="utf-8") as level_file:
         data = json.load(level_file)
 
@@ -106,6 +105,7 @@ def load_level(path):
         "time_bubbles": [],
         "gravity_zones": [],
         "tripwires": [],
+        "floating_pickups": [],
         "squirrel_start": (0, 0),
         "viper_start": (0, 0),
     }
@@ -132,6 +132,8 @@ def load_level(path):
                 level["gravity_zones"].append(pygame.Rect(x, y, tile_size, tile_size))
             elif tile_char == "X":
                 level["tripwires"].append(pygame.Rect(x, y, tile_size, tile_size))
+            elif tile_char == "F":
+                level["floating_pickups"].append(pygame.Rect(x, y, tile_size, tile_size))
 
     return level
 
@@ -224,6 +226,9 @@ GAMEPAD_DEADZONE = 0.3  # how far a stick must tilt before it counts as a direct
 SPEED_SCALE_PER_CATCH = 0.03  # +3% speed for both squirrel and V.I.P.E.R. per catch
 MAX_SPEED_MULTIPLIER = 1.8    # caps the escalation so it never becomes unplayable
 
+FLOATING_COLOR = (200, 240, 255)  # pale cyan -- reads as "light/airborne"
+FLOATING_DURATION = 5.0  # seconds of hazard immunity after picking one up
+
 
 def main():
     pygame.init()
@@ -272,11 +277,13 @@ def main():
     time_bubbles = level["time_bubbles"]
     gravity_zones = level["gravity_zones"]
     tripwires = level["tripwires"]
+    floating_pickups = level["floating_pickups"]
     squirrel_x, squirrel_y = level["squirrel_start"]
     viper_x, viper_y = level["viper_start"]
     viper_patrol_y = level["viper_patrol_y"]
     jump_cooldown_timer = 0.0
     teleport_cooldown_timer = 0.0
+    floating_timer = 0.0
     has_shield = False
     invulnerable_timer = 0.0
     animation_timer = 0.0
@@ -343,6 +350,7 @@ def main():
                     time_bubbles = level["time_bubbles"]
                     gravity_zones = level["gravity_zones"]
                     tripwires = level["tripwires"]
+                    floating_pickups = level["floating_pickups"]
                     squirrel_x, squirrel_y = level["squirrel_start"]
                     viper_x, viper_y = level["viper_start"]
                     viper_patrol_y = level["viper_patrol_y"]
@@ -355,6 +363,7 @@ def main():
                     tag_timer = 0.0
                     jump_cooldown_timer = 0.0
                     teleport_cooldown_timer = 0.0
+                    floating_timer = 0.0
                     has_shield = False
                     invulnerable_timer = 0.0
                     facing_x, facing_y = 1, 0
@@ -382,6 +391,7 @@ def main():
                     time_bubbles = level["time_bubbles"]
                     gravity_zones = level["gravity_zones"]
                     tripwires = level["tripwires"]
+                    floating_pickups = level["floating_pickups"]
                     squirrel_x, squirrel_y = level["squirrel_start"]
                     viper_x, viper_y = level["viper_start"]
                     viper_patrol_y = level["viper_patrol_y"]
@@ -394,6 +404,7 @@ def main():
                     tag_timer = 0.0
                     jump_cooldown_timer = 0.0
                     teleport_cooldown_timer = 0.0
+                    floating_timer = 0.0
                     has_shield = False
                     invulnerable_timer = 0.0
                     facing_x, facing_y = 1, 0
@@ -422,6 +433,7 @@ def main():
                     time_bubbles = level["time_bubbles"]
                     gravity_zones = level["gravity_zones"]
                     tripwires = level["tripwires"]
+                    floating_pickups = level["floating_pickups"]
                     squirrel_x, squirrel_y = level["squirrel_start"]
                     viper_x, viper_y = level["viper_start"]
                     viper_patrol_y = level["viper_patrol_y"]
@@ -434,6 +446,7 @@ def main():
                     tag_timer = 0.0
                     jump_cooldown_timer = 0.0
                     teleport_cooldown_timer = 0.0
+                    floating_timer = 0.0
                     has_shield = False
                     invulnerable_timer = 0.0
                     facing_x, facing_y = 1, 0
@@ -451,6 +464,7 @@ def main():
                     time_bubbles = level["time_bubbles"]
                     gravity_zones = level["gravity_zones"]
                     tripwires = level["tripwires"]
+                    floating_pickups = level["floating_pickups"]
                     squirrel_x, squirrel_y = level["squirrel_start"]
                     viper_x, viper_y = level["viper_start"]
                     viper_patrol_y = level["viper_patrol_y"]
@@ -463,6 +477,7 @@ def main():
                     tag_timer = 0.0
                     jump_cooldown_timer = 0.0
                     teleport_cooldown_timer = 0.0
+                    floating_timer = 0.0
                     has_shield = False
                     invulnerable_timer = 0.0
                     facing_x, facing_y = 1, 0
@@ -535,6 +550,7 @@ def main():
                         time_bubbles = level["time_bubbles"]
                         gravity_zones = level["gravity_zones"]
                         tripwires = level["tripwires"]
+                        floating_pickups = level["floating_pickups"]
                         squirrel_x, squirrel_y = level["squirrel_start"]
                         viper_x, viper_y = level["viper_start"]
                         viper_patrol_y = level["viper_patrol_y"]
@@ -547,6 +563,7 @@ def main():
                         tag_timer = 0.0
                         jump_cooldown_timer = 0.0
                         teleport_cooldown_timer = 0.0
+                        floating_timer = 0.0
                         has_shield = False
                         invulnerable_timer = 0.0
                         facing_x, facing_y = 1, 0
@@ -601,8 +618,9 @@ def main():
 
             # Gravity flip zones reverse the squirrel's controls -- checked
             # against its position entering this frame, before this frame's
-            # own movement is applied.
-            controls_flipped = pygame.Rect(squirrel_x, squirrel_y, SQUIRREL_SIZE, SQUIRREL_SIZE).collidelist(gravity_zones) != -1
+            # own movement is applied. Skipped while floating (hazard
+            # immunity from a floating pickup).
+            controls_flipped = floating_timer <= 0 and pygame.Rect(squirrel_x, squirrel_y, SQUIRREL_SIZE, SQUIRREL_SIZE).collidelist(gravity_zones) != -1
 
             # No player input while caught -- the squirrel is frozen in the bubble.
             # In vs_ai mode either key set works, as it always has. In
@@ -686,11 +704,23 @@ def main():
                     del shields[hit_shield]
                     has_shield = True
 
+            # Picking up a floating pickup grants hazard immunity for a
+            # few seconds -- a one-time pickup, but the buff itself starts
+            # counting down immediately rather than being saved for later.
+            if squirrel_state == "free":
+                hit_floating = squirrel_rect.collidelist(floating_pickups)
+                if hit_floating != -1:
+                    del floating_pickups[hit_floating]
+                    floating_timer = FLOATING_DURATION
+
+            floating_timer -= delta_time
+
             # Crossing a tripwire alerts V.I.P.E.R. to the squirrel's exact
             # position regardless of distance, by boosting the same
             # tag_timer "locked on" system Tracker Tags already use --
             # reusable, not consumed, so walking back over it re-triggers.
-            if squirrel_state == "free" and squirrel_rect.collidelist(tripwires) != -1:
+            # Skipped while floating, since floating grants hazard immunity.
+            if squirrel_state == "free" and floating_timer <= 0 and squirrel_rect.collidelist(tripwires) != -1:
                 tag_timer = TAG_DURATION
 
             # Brief invulnerability right after a shield absorbs a catch,
@@ -960,6 +990,12 @@ def main():
             for shield in shields:
                 pygame.draw.circle(screen, SHIELD_COLOR, shield.center, shield.width // 3, width=4)
 
+            for pickup in floating_pickups:
+                cx, cy = pickup.center
+                half = pickup.width // 3
+                triangle_points = [(cx, cy - half), (cx - half, cy + half), (cx + half, cy + half)]
+                pygame.draw.polygon(screen, FLOATING_COLOR, triangle_points)
+
             for bubble in time_bubbles:
                 pygame.draw.circle(screen, TIME_BUBBLE_COLOR, bubble.center, bubble.width // 2, width=3)
 
@@ -983,6 +1019,10 @@ def main():
                     pygame.draw.rect(screen, SHIELD_COLOR, squirrel_rect.inflate(8, 8), width=3)
                 elif invulnerable_timer > 0:
                     pygame.draw.rect(screen, TEXT_COLOR, squirrel_rect.inflate(8, 8), width=3)
+                if floating_timer > 0:
+                    # A separate, larger ring -- can show at the same time
+                    # as the shield ring, since the two buffs are independent.
+                    pygame.draw.rect(screen, FLOATING_COLOR, squirrel_rect.inflate(16, 16), width=3)
 
             if viper_state == "blinded":
                 viper_color = VIPER_BLINDED_COLOR
