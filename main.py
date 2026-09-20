@@ -1,10 +1,10 @@
 """
 main.py -- MODIS_NeonTail
 
-Phase 10, Step 4: tripwires. A new "X" tile alerts V.I.P.E.R. to the
-squirrel's exact position when crossed, regardless of actual distance --
-this reuses tag_timer, the same "locked on" mechanism Tracker Tags
-introduced in Phase 9, rather than inventing a second alert system.
+Phase 10, Step 5: teleport dodge. Pressing T instantly teleports the
+squirrel TELEPORT_DISTANCE in its current facing direction, on a much
+longer cooldown than the jump-pad -- an always-available emergency
+escape the player triggers, rather than something placed in a level.
 """
 
 import json
@@ -190,6 +190,9 @@ GRAVITY_ZONE_COLOR = (220, 60, 60)  # red -- reads as a hazard/warning zone
 
 TRIPWIRE_COLOR = (255, 200, 0)  # amber -- drawn as a taut line, not a filled tile
 
+TELEPORT_DISTANCE = 200  # pixels -- a bit farther than a jump-pad launch
+TELEPORT_COOLDOWN = 6.0  # seconds before the squirrel can teleport again
+
 
 def main():
     pygame.init()
@@ -227,6 +230,7 @@ def main():
     viper_x, viper_y = level["viper_start"]
     viper_patrol_y = level["viper_patrol_y"]
     jump_cooldown_timer = 0.0
+    teleport_cooldown_timer = 0.0
     has_shield = False
     invulnerable_timer = 0.0
     animation_timer = 0.0
@@ -305,6 +309,7 @@ def main():
                     stun_timer = 0.0
                     tag_timer = 0.0
                     jump_cooldown_timer = 0.0
+                    teleport_cooldown_timer = 0.0
                     has_shield = False
                     invulnerable_timer = 0.0
                     facing_x, facing_y = 1, 0
@@ -339,6 +344,7 @@ def main():
                     stun_timer = 0.0
                     tag_timer = 0.0
                     jump_cooldown_timer = 0.0
+                    teleport_cooldown_timer = 0.0
                     has_shield = False
                     invulnerable_timer = 0.0
                     facing_x, facing_y = 1, 0
@@ -370,6 +376,16 @@ def main():
                             "y": squirrel_y + SQUIRREL_SIZE / 2,
                             "timer": DECOY_DURATION,
                         }
+                if event.type == pygame.KEYDOWN and event.key == pygame.K_t:
+                    if squirrel_state == "free" and teleport_cooldown_timer <= 0:
+                        teleport_dx = facing_x * TELEPORT_DISTANCE
+                        teleport_dy = facing_y * TELEPORT_DISTANCE
+                        squirrel_x, squirrel_y = move_with_collision(
+                            squirrel_x, squirrel_y, teleport_dx, teleport_dy, SQUIRREL_SIZE, walls
+                        )
+                        squirrel_x = max(0, min(WINDOW_WIDTH - SQUIRREL_SIZE, squirrel_x))
+                        squirrel_y = max(0, min(WINDOW_HEIGHT - SQUIRREL_SIZE, squirrel_y))
+                        teleport_cooldown_timer = TELEPORT_COOLDOWN
 
         # 2. Update game state -- gameplay only advances while playing, so
         # the menu screen doesn't move or count down behind the scenes.
@@ -436,6 +452,7 @@ def main():
             # from the list -- is what stops one firing every single frame
             # while the squirrel is still standing on it.
             jump_cooldown_timer -= delta_time
+            teleport_cooldown_timer -= delta_time
             if (
                 squirrel_state == "free"
                 and jump_cooldown_timer <= 0
@@ -730,6 +747,13 @@ def main():
 
             level_surface = font.render(f"Level: {level_number}/{LEVEL_COUNT} (N to switch)", True, TEXT_COLOR)
             screen.blit(level_surface, (20, 100))
+
+            if teleport_cooldown_timer > 0:
+                dodge_text = f"Dodge: {teleport_cooldown_timer:.1f}s (T)"
+            else:
+                dodge_text = "Dodge: Ready (T)"
+            dodge_surface = font.render(dodge_text, True, TEXT_COLOR)
+            screen.blit(dodge_surface, (20, 140))
 
             if game_state == "paused":
                 # A semi-transparent black rectangle drawn over everything
