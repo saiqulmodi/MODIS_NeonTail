@@ -1,10 +1,11 @@
 """
 main.py -- MODIS_NeonTail
 
-Phase 10, Step 5: teleport dodge. Pressing T instantly teleports the
-squirrel TELEPORT_DISTANCE in its current facing direction, on a much
-longer cooldown than the jump-pad -- an always-available emergency
-escape the player triggers, rather than something placed in a level.
+Phase 11, Step 1: basic 2-player mode. game_mode is "vs_ai" (the default)
+or "two_player" -- pressing 2 on the main menu starts a match where
+Player A (arrows) is the squirrel and Player B (WASD) drives V.I.P.E.R.
+directly, replacing its entire chase/patrol/prediction AI with straight
+keyboard input. No round timer or role swap yet -- free play only.
 """
 
 import json
@@ -213,6 +214,10 @@ def main():
     # game_state is "menu" (title screen) or "playing" (gameplay running).
     game_state = "menu"
 
+    # game_mode is "vs_ai" (V.I.P.E.R. is AI-controlled, the default) or
+    # "two_player" (V.I.P.E.R. is controlled by a second human on WASD).
+    game_mode = "vs_ai"
+
     save_data = load_save()
     lifetime_catches = save_data["lifetime_catches"]
 
@@ -278,11 +283,16 @@ def main():
                     game_state = "menu"
             if game_state == "menu":
                 if event.type == pygame.KEYDOWN and event.key in (pygame.K_RETURN, pygame.K_KP_ENTER):
+                    game_mode = "vs_ai"
                     game_state = "playing"
                     pygame.mixer.music.play(loops=-1)
                 if event.type == pygame.KEYDOWN and event.key == pygame.K_l:
                     level_select_choice = level_number
                     game_state = "level_select"
+                if event.type == pygame.KEYDOWN and event.key == pygame.K_2:
+                    game_mode = "two_player"
+                    game_state = "playing"
+                    pygame.mixer.music.play(loops=-1)
             elif game_state == "level_select":
                 if event.type == pygame.KEYDOWN and event.key in (pygame.K_LEFT, pygame.K_a):
                     level_select_choice = (level_select_choice - 2) % LEVEL_COUNT + 1
@@ -316,6 +326,7 @@ def main():
                     particles = []
                     taunts = []
                     decoy = None
+                    game_mode = "vs_ai"
                     game_state = "playing"
                     write_save(level_number, lifetime_catches)
                     pygame.mixer.music.play(loops=-1)
@@ -402,20 +413,23 @@ def main():
             controls_flipped = pygame.Rect(squirrel_x, squirrel_y, SQUIRREL_SIZE, SQUIRREL_SIZE).collidelist(gravity_zones) != -1
 
             # No player input while caught -- the squirrel is frozen in the bubble.
+            # In two_player mode WASD belongs to V.I.P.E.R.'s human player,
+            # so the squirrel only answers to arrow keys there; in vs_ai
+            # mode either key set still works, as it always has.
             if squirrel_state == "free":
-                if keys[pygame.K_LEFT] or keys[pygame.K_a]:
+                if keys[pygame.K_LEFT] or (game_mode == "vs_ai" and keys[pygame.K_a]):
                     move_dx -= SQUIRREL_SPEED * delta_time
                     is_moving = True
                     facing_x, facing_y = -1, 0
-                if keys[pygame.K_RIGHT] or keys[pygame.K_d]:
+                if keys[pygame.K_RIGHT] or (game_mode == "vs_ai" and keys[pygame.K_d]):
                     move_dx += SQUIRREL_SPEED * delta_time
                     is_moving = True
                     facing_x, facing_y = 1, 0
-                if keys[pygame.K_UP] or keys[pygame.K_w]:
+                if keys[pygame.K_UP] or (game_mode == "vs_ai" and keys[pygame.K_w]):
                     move_dy -= SQUIRREL_SPEED * delta_time
                     is_moving = True
                     facing_x, facing_y = 0, -1
-                if keys[pygame.K_DOWN] or keys[pygame.K_s]:
+                if keys[pygame.K_DOWN] or (game_mode == "vs_ai" and keys[pygame.K_s]):
                     move_dy += SQUIRREL_SPEED * delta_time
                     is_moving = True
                     facing_x, facing_y = 0, 1
@@ -523,6 +537,24 @@ def main():
 
             if viper_state == "stunned":
                 pass  # frozen in place -- no movement at all
+            elif game_mode == "two_player":
+                # A human on WASD drives V.I.P.E.R. directly -- no chase,
+                # patrol, prediction, or lock-on logic applies at all. It
+                # can still move any time (unlike the AI, it doesn't need
+                # a target), but stays frozen while blinded, same as the
+                # AI would, and still slows down in a time bubble.
+                if viper_state != "blinded":
+                    viper_move_dx = 0
+                    viper_move_dy = 0
+                    if keys[pygame.K_a]:
+                        viper_move_dx -= VIPER_CHASE_SPEED * viper_speed_multiplier * delta_time
+                    if keys[pygame.K_d]:
+                        viper_move_dx += VIPER_CHASE_SPEED * viper_speed_multiplier * delta_time
+                    if keys[pygame.K_w]:
+                        viper_move_dy -= VIPER_CHASE_SPEED * viper_speed_multiplier * delta_time
+                    if keys[pygame.K_s]:
+                        viper_move_dy += VIPER_CHASE_SPEED * viper_speed_multiplier * delta_time
+                    viper_x, viper_y = move_with_collision(viper_x, viper_y, viper_move_dx, viper_move_dy, VIPER_SIZE, walls)
             elif squirrel_state == "free" and viper_state == "active":
                 # Distance to the REAL squirrel drives tag_timer, regardless
                 # of whether a decoy is what's actually being chased right
@@ -655,7 +687,7 @@ def main():
             title_rect = title_surface.get_rect(center=(WINDOW_WIDTH / 2, WINDOW_HEIGHT / 2 - 40))
             screen.blit(title_surface, title_rect)
 
-            prompt_surface = font.render("Press ENTER to Play  --  L for Level Select", True, TEXT_COLOR)
+            prompt_surface = font.render("ENTER to Play  --  L: Level Select  --  2: 2-Player", True, TEXT_COLOR)
             prompt_rect = prompt_surface.get_rect(center=(WINDOW_WIDTH / 2, WINDOW_HEIGHT / 2 + 40))
             screen.blit(prompt_surface, prompt_rect)
 
@@ -754,6 +786,10 @@ def main():
                 dodge_text = "Dodge: Ready (T)"
             dodge_surface = font.render(dodge_text, True, TEXT_COLOR)
             screen.blit(dodge_surface, (20, 140))
+
+            if game_mode == "two_player":
+                mode_surface = font.render("2-Player: Arrows = Squirrel, WASD = V.I.P.E.R.", True, TEXT_COLOR)
+                screen.blit(mode_surface, (20, 180))
 
             if game_state == "paused":
                 # A semi-transparent black rectangle drawn over everything
