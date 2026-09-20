@@ -502,23 +502,27 @@ def main():
             controls_flipped = pygame.Rect(squirrel_x, squirrel_y, SQUIRREL_SIZE, SQUIRREL_SIZE).collidelist(gravity_zones) != -1
 
             # No player input while caught -- the squirrel is frozen in the bubble.
-            # In two_player mode WASD belongs to V.I.P.E.R.'s human player,
-            # so the squirrel only answers to arrow keys there; in vs_ai
-            # mode either key set still works, as it always has.
+            # In vs_ai mode either key set works, as it always has. In
+            # two_player mode only ONE physical player's keys drive the
+            # squirrel at a time, and which one depends on match_round --
+            # Player A (arrows) in round 1, Player B (WASD) in round 2.
+            squirrel_uses_arrows = game_mode == "vs_ai" or (game_mode == "two_player" and match_round == 1)
+            squirrel_uses_wasd = game_mode == "vs_ai" or (game_mode == "two_player" and match_round == 2)
+
             if squirrel_state == "free":
-                if keys[pygame.K_LEFT] or (game_mode == "vs_ai" and keys[pygame.K_a]):
+                if (squirrel_uses_arrows and keys[pygame.K_LEFT]) or (squirrel_uses_wasd and keys[pygame.K_a]):
                     move_dx -= SQUIRREL_SPEED * delta_time
                     is_moving = True
                     facing_x, facing_y = -1, 0
-                if keys[pygame.K_RIGHT] or (game_mode == "vs_ai" and keys[pygame.K_d]):
+                if (squirrel_uses_arrows and keys[pygame.K_RIGHT]) or (squirrel_uses_wasd and keys[pygame.K_d]):
                     move_dx += SQUIRREL_SPEED * delta_time
                     is_moving = True
                     facing_x, facing_y = 1, 0
-                if keys[pygame.K_UP] or (game_mode == "vs_ai" and keys[pygame.K_w]):
+                if (squirrel_uses_arrows and keys[pygame.K_UP]) or (squirrel_uses_wasd and keys[pygame.K_w]):
                     move_dy -= SQUIRREL_SPEED * delta_time
                     is_moving = True
                     facing_x, facing_y = 0, -1
-                if keys[pygame.K_DOWN] or (game_mode == "vs_ai" and keys[pygame.K_s]):
+                if (squirrel_uses_arrows and keys[pygame.K_DOWN]) or (squirrel_uses_wasd and keys[pygame.K_s]):
                     move_dy += SQUIRREL_SPEED * delta_time
                     is_moving = True
                     facing_x, facing_y = 0, 1
@@ -627,22 +631,34 @@ def main():
             if viper_state == "stunned":
                 pass  # frozen in place -- no movement at all
             elif game_mode == "two_player":
-                # A human on WASD drives V.I.P.E.R. directly -- no chase,
-                # patrol, prediction, or lock-on logic applies at all. It
-                # can still move any time (unlike the AI, it doesn't need
-                # a target), but stays frozen while blinded, same as the
-                # AI would, and still slows down in a time bubble.
+                # A human drives V.I.P.E.R. directly -- no chase, patrol,
+                # prediction, or lock-on logic applies at all. It can move
+                # any time (unlike the AI, it doesn't need a target), but
+                # stays frozen while blinded, same as the AI would, and
+                # still slows down in a time bubble. Whichever player
+                # ISN'T currently the squirrel controls it -- WASD (Player
+                # B) in round 1, arrows (Player A) in round 2.
                 if viper_state != "blinded":
                     viper_move_dx = 0
                     viper_move_dy = 0
-                    if keys[pygame.K_a]:
-                        viper_move_dx -= VIPER_CHASE_SPEED * viper_speed_multiplier * delta_time
-                    if keys[pygame.K_d]:
-                        viper_move_dx += VIPER_CHASE_SPEED * viper_speed_multiplier * delta_time
-                    if keys[pygame.K_w]:
-                        viper_move_dy -= VIPER_CHASE_SPEED * viper_speed_multiplier * delta_time
-                    if keys[pygame.K_s]:
-                        viper_move_dy += VIPER_CHASE_SPEED * viper_speed_multiplier * delta_time
+                    if match_round == 1:
+                        if keys[pygame.K_a]:
+                            viper_move_dx -= VIPER_CHASE_SPEED * viper_speed_multiplier * delta_time
+                        if keys[pygame.K_d]:
+                            viper_move_dx += VIPER_CHASE_SPEED * viper_speed_multiplier * delta_time
+                        if keys[pygame.K_w]:
+                            viper_move_dy -= VIPER_CHASE_SPEED * viper_speed_multiplier * delta_time
+                        if keys[pygame.K_s]:
+                            viper_move_dy += VIPER_CHASE_SPEED * viper_speed_multiplier * delta_time
+                    else:
+                        if keys[pygame.K_LEFT]:
+                            viper_move_dx -= VIPER_CHASE_SPEED * viper_speed_multiplier * delta_time
+                        if keys[pygame.K_RIGHT]:
+                            viper_move_dx += VIPER_CHASE_SPEED * viper_speed_multiplier * delta_time
+                        if keys[pygame.K_UP]:
+                            viper_move_dy -= VIPER_CHASE_SPEED * viper_speed_multiplier * delta_time
+                        if keys[pygame.K_DOWN]:
+                            viper_move_dy += VIPER_CHASE_SPEED * viper_speed_multiplier * delta_time
                     viper_x, viper_y = move_with_collision(viper_x, viper_y, viper_move_dx, viper_move_dy, VIPER_SIZE, walls)
             elif squirrel_state == "free" and viper_state == "active":
                 # Distance to the REAL squirrel drives tag_timer, regardless
