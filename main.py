@@ -1,1142 +1,797 @@
-"""
-main.py -- MODIS_NeonTail
-
-Post-completion enhancement, Step 4: real squirrel/V.I.P.E.R. art.
-assets/sprites/*.png (self-drawn with pygame's own primitives, not
-downloaded) replace the plain colored rectangles. V.I.P.E.R.'s
-blinded/stunned tints are precomputed once via BLEND_RGBA_MULT rather
-than re-copying the surface every frame. Pressing T also briefly swaps
-the squirrel to a bigger-tailed "tail flag" pose.
-"""
-
 import asyncio
-import json
 import math
-import random
-import sys
 from pathlib import Path
-
+import random
 import pygame
 
+pygame.init()
 
-def resource_path(relative_path):
-    """Path to a bundled, read-only resource (levels, sounds) -- works
-    both running as a normal script and packaged by PyInstaller, which
-    extracts bundled files into a temporary sys._MEIPASS folder at
-    startup instead of leaving them next to the .exe."""
-    base = Path(getattr(sys, "_MEIPASS", Path(__file__).parent))
-    return base / relative_path
+sprite_dir = Path("assets/sprites")
+sprite_dir.mkdir(parents=True, exist_ok=True)
 
 
-def app_data_path(relative_path):
-    """Path to a file that must persist after the app closes (save.json).
-    Unlike resource_path(), this must NOT use sys._MEIPASS -- PyInstaller
-    deletes that temp folder on exit, so anything written there would be
-    lost. Sits next to the .exe when frozen, next to main.py otherwise."""
-    if getattr(sys, "frozen", False):
-        base = Path(sys.executable).parent
+def create_squirrel_sprite(tail_flag: bool = False, aura_color=None, alpha: int = 255) -> pygame.Surface:
+    """Agent S.Q.U.I.R.E.L. with a massive bushy neon tail and power aura."""
+    surf = pygame.Surface((72, 60), pygame.SRCALPHA)
+
+    tail_neon = aura_color if aura_color else (255, 140, 0)
+    tail_core = (255, 215, 60)
+    tail_highlight = (255, 240, 150)
+    body_fur = (195, 85, 20)
+    chest_cream = (245, 205, 150)
+
+    # Bushy Neon Tail
+    if tail_flag:
+        pygame.draw.circle(surf, (*tail_neon, alpha), (18, 20), 20)
+        pygame.draw.circle(surf, (*tail_neon, alpha), (28, 14), 16)
+        pygame.draw.circle(surf, (*tail_core, alpha), (20, 18), 12)
+        pygame.draw.circle(surf, (*tail_highlight, alpha), (22, 16), 6)
     else:
-        base = Path(__file__).parent
-    return base / relative_path
+        pygame.draw.ellipse(surf, (*tail_neon, alpha), (2, 8, 30, 46))
+        pygame.draw.ellipse(surf, (*tail_neon, alpha), (10, 4, 26, 32))
+        pygame.draw.ellipse(surf, (*tail_core, alpha), (8, 12, 18, 36))
+        pygame.draw.ellipse(surf, (*tail_highlight, alpha), (12, 16, 10, 24))
+
+    # Body & Head
+    pygame.draw.ellipse(surf, (*body_fur, alpha), (28, 24, 26, 28))
+    pygame.draw.ellipse(surf, (*chest_cream, alpha), (36, 28, 14, 18))
+    pygame.draw.circle(surf, (*body_fur, alpha), (46, 24), 11)
+    pygame.draw.polygon(surf, (*body_fur, alpha), [(42, 14), (46, 6), (50, 14)])
+    pygame.draw.polygon(surf, (255, 180, 180, alpha), [(43, 13), (46, 8), (48, 13)])
+
+    # Cyber Visor & Eye
+    pygame.draw.ellipse(surf, (0, 240, 255, alpha), (46, 21, 12, 6))
+    pygame.draw.circle(surf, (255, 255, 255, alpha), (51, 23), 2)
+
+    # Paws
+    pygame.draw.circle(surf, (40, 20, 20, alpha), (56, 26), 2)
+    pygame.draw.ellipse(surf, (*body_fur, alpha), (30, 48, 10, 6))
+    pygame.draw.ellipse(surf, (*body_fur, alpha), (44, 48, 10, 6))
+
+    return surf
 
 
-LEVEL_DIR = resource_path("levels")
-LEVEL_COUNT = 100  # level_001.json through level_100.json
-SAVE_PATH = app_data_path("save.json")
-# Browsers (pygbag, sys.platform == "emscripten") can only play OGG; the desktop
-# game and the PyInstaller .exe keep using the original WAV files.
-AUDIO_EXT = ".ogg" if sys.platform == "emscripten" else ".wav"
-SOUND_DIR = resource_path("assets") / "sounds"
-MUSIC_PATH = resource_path("assets") / "music" / f"theme{AUDIO_EXT}"
-SPRITE_DIR = resource_path("assets") / "sprites"
-TILE_WALL_COLOR = (60, 60, 90)  # dark slate -- reads as "structure", not floor
+def create_viper_sprite(is_boss: bool = False, flash_white: bool = False) -> pygame.Surface:
+    """V.I.P.E.R. drone sprite with hit-flash support."""
+    surf = pygame.Surface((84, 54), pygame.SRCALPHA)
+
+    if flash_white:
+        dark_metal = (240, 240, 255)
+        light_metal = (255, 255, 255)
+        neon_accent = (255, 255, 255)
+        lens_glow = (255, 255, 255)
+    else:
+        dark_metal = (35, 40, 55) if not is_boss else (60, 20, 25)
+        light_metal = (65, 80, 105) if not is_boss else (110, 40, 50)
+        neon_accent = (0, 210, 255) if not is_boss else (255, 40, 80)
+        lens_glow = (200, 255, 255) if not is_boss else (255, 220, 100)
+
+    # Thrusters
+    pygame.draw.circle(surf, dark_metal, (8, 27), 7)
+    pygame.draw.circle(surf, neon_accent, (4, 27), 4)
+    pygame.draw.ellipse(surf, dark_metal, (14, 18, 18, 18))
+    pygame.draw.ellipse(surf, neon_accent, (18, 21, 10, 12), width=2)
+    pygame.draw.ellipse(surf, dark_metal, (28, 16, 22, 22))
+    pygame.draw.ellipse(surf, neon_accent, (32, 19, 14, 16), width=2)
+
+    # Torso & Head
+    pygame.draw.ellipse(surf, dark_metal, (44, 14, 26, 26))
+    pygame.draw.ellipse(surf, neon_accent, (48, 17, 18, 20), width=2)
+
+    head_points = [(56, 10), (82, 27), (56, 44), (64, 27)]
+    pygame.draw.polygon(surf, light_metal, head_points)
+    pygame.draw.polygon(surf, neon_accent, head_points, width=2)
+    pygame.draw.polygon(surf, lens_glow, [(68, 24), (79, 27), (68, 30)])
+
+    return pygame.transform.flip(surf, True, False)
 
 
-def load_save():
-    """Read save.json if it exists; fall back to defaults on a first run
-    or if the file is missing/corrupt."""
-    if SAVE_PATH.exists():
-        try:
-            with open(SAVE_PATH, "r", encoding="utf-8") as save_file:
-                data = json.load(save_file)
-            return {
-                "last_level": data.get("last_level", 1),
-                "lifetime_catches": data.get("lifetime_catches", 0),
-            }
-        except (json.JSONDecodeError, OSError):
-            pass
-    return {"last_level": 1, "lifetime_catches": 0}
+class ViperEnemy:
+    PATTERNS = ["SINE_WAVE", "ZIG_ZAG", "HUNT_TRACK", "LURK_SWOOP"]
+
+    def __init__(self, level: int, is_boss: bool = False, offset_x: int = 0):
+        self.is_boss = is_boss
+        self.scale = 2.8 if is_boss else 2.0
+        self.width = int(84 * self.scale)
+        self.height = int(54 * self.scale)
+
+        self.normal_sprite = pygame.transform.scale(
+            create_viper_sprite(is_boss=is_boss, flash_white=False), (self.width, self.height)
+        )
+        self.flash_sprite = pygame.transform.scale(
+            create_viper_sprite(is_boss=is_boss, flash_white=True), (self.width, self.height)
+        )
+
+        self.base_anchor_x = 590.0 + offset_x
+        self.x = self.base_anchor_x
+        self.y = random.randint(80, 420)
+
+        base_hp = 250 if is_boss else 60
+        self.max_hp = base_hp + (level * 18 if is_boss else level * 6)
+        self.hp = self.max_hp
+
+        self.level = level
+        self.speed_stat = 2.4 + min(4.0, level * 0.05)
+        self.speed_y = self.speed_stat * random.choice([1, -1])
+
+        self.current_pattern = random.choice(self.PATTERNS)
+        self.pattern_timer = random.randint(120, 240)
+        self.sine_angle = random.uniform(0, math.pi * 2)
+
+        self.cooldown_max = max(18, (36 if is_boss else 52) - int(level * 0.35))
+        self.shoot_timer = random.randint(0, self.cooldown_max)
+        self.flash_timer = 0
+
+    def update(self, screen_height: int, screen_width: int, player_y: float):
+        self.pattern_timer -= 1
+        if self.pattern_timer <= 0:
+            self.current_pattern = random.choice(self.PATTERNS)
+            self.pattern_timer = random.randint(120, 220)
+            self.speed_y = self.speed_stat * random.choice([1, -1])
+
+        if self.current_pattern == "SINE_WAVE":
+            self.sine_angle += 0.05
+            self.y += math.sin(self.sine_angle) * (self.speed_stat * 1.6)
+            self.x = self.base_anchor_x + math.cos(self.sine_angle * 0.5) * 50
+
+        elif self.current_pattern == "ZIG_ZAG":
+            self.y += self.speed_y * 1.3
+            if self.y <= 60 or self.y >= screen_height - self.height - 30:
+                self.speed_y *= -1
+            self.x += (self.base_anchor_x - self.x) * 0.05
+
+        elif self.current_pattern == "HUNT_TRACK":
+            target_diff = (player_y + 10) - self.y
+            if abs(target_diff) > 8:
+                self.y += math.copysign(min(abs(target_diff), self.speed_stat * 1.1), target_diff)
+            forward_x = self.base_anchor_x - 110
+            self.x += (forward_x - self.x) * 0.04
+
+        elif self.current_pattern == "LURK_SWOOP":
+            self.sine_angle += 0.07
+            self.y += math.cos(self.sine_angle) * (self.speed_stat * 1.2)
+            self.x = (self.base_anchor_x - 70) + math.sin(self.sine_angle) * 120
+
+        self.y = max(55, min(screen_height - self.height - 20, self.y))
+        self.x = max(380, min(screen_width - self.width - 15, self.x))
+
+        if self.flash_timer > 0:
+            self.flash_timer -= 1
+
+        self.shoot_timer += 1
+        should_shoot = False
+        if self.shoot_timer >= self.cooldown_max:
+            self.shoot_timer = 0
+            should_shoot = True
+
+        return should_shoot
+
+    @property
+    def rect(self):
+        return pygame.Rect(self.x + 10, self.y + 10, self.width - 20, self.height - 20)
+
+    @property
+    def sprite(self):
+        return self.flash_sprite if self.flash_timer > 0 else self.normal_sprite
 
 
-def write_save(last_level, lifetime_catches):
-    data = {"last_level": last_level, "lifetime_catches": lifetime_catches}
-    with open(SAVE_PATH, "w", encoding="utf-8") as save_file:
-        json.dump(data, save_file, indent=2)
+def draw_bar(surface, x, y, width, height, current, maximum, bar_color):
+    fill = int((max(0, current) / maximum) * width)
+    pygame.draw.rect(surface, (30, 32, 45), (x, y, width, height), border_radius=4)
+    if fill > 0:
+        pygame.draw.rect(surface, bar_color, (x, y, fill, height), border_radius=4)
+    pygame.draw.rect(surface, (180, 185, 205), (x, y, width, height), 2, border_radius=4)
 
 
-def level_path(level_number):
-    return LEVEL_DIR / f"level_{level_number:03d}.json"
-
-
-def reset_level(level_number):
-    """Load a level and add the derived viper_patrol_y field. Shared by
-    the initial setup, N-key switching, and the level-select screen, so
-    the loading logic only lives in one place. Returns a dict -- see
-    load_level() for the keys -- rather than a long positional tuple, so
-    adding another per-level list later doesn't require touching every
-    call site's unpacking order."""
-    level = load_level(level_path(level_number))
-    level["viper_patrol_y"] = level["viper_start"][1]
-    return level
-
-
-def load_level(path):
-    """Read a level JSON file and turn its character grid into a dict:
-    walls, landmines, jump_pads, shields, time_bubbles, gravity_zones,
-    tripwires, floating_pickups (lists of pygame.Rect) and squirrel_start,
-    viper_start ((x, y) tuples). Tile characters: '#' = wall,
-    'S' = squirrel start, 'V' = V.I.P.E.R. start, 'W' = whoopee-cushion
-    landmine, 'J' = jump-pad, 'H' = shield pickup, 'B' = time bubble,
-    'G' = gravity flip zone, 'X' = tripwire, 'F' = floating pickup."""
-    with open(path, "r", encoding="utf-8") as level_file:
-        data = json.load(level_file)
-
-    tile_size = data["tile_size"]
-    grid = data["grid"]
-
-    level = {
-        "walls": [],
-        "landmines": [],
-        "jump_pads": [],
-        "shields": [],
-        "time_bubbles": [],
-        "gravity_zones": [],
-        "tripwires": [],
-        "floating_pickups": [],
-        "squirrel_start": (0, 0),
-        "viper_start": (0, 0),
-    }
-
-    for row_index, row in enumerate(grid):
-        for col_index, tile_char in enumerate(row):
-            x = col_index * tile_size
-            y = row_index * tile_size
-            if tile_char == "#":
-                level["walls"].append(pygame.Rect(x, y, tile_size, tile_size))
-            elif tile_char == "S":
-                level["squirrel_start"] = (x, y)
-            elif tile_char == "V":
-                level["viper_start"] = (x, y)
-            elif tile_char == "W":
-                level["landmines"].append(pygame.Rect(x, y, tile_size, tile_size))
-            elif tile_char == "J":
-                level["jump_pads"].append(pygame.Rect(x, y, tile_size, tile_size))
-            elif tile_char == "H":
-                level["shields"].append(pygame.Rect(x, y, tile_size, tile_size))
-            elif tile_char == "B":
-                level["time_bubbles"].append(pygame.Rect(x, y, tile_size, tile_size))
-            elif tile_char == "G":
-                level["gravity_zones"].append(pygame.Rect(x, y, tile_size, tile_size))
-            elif tile_char == "X":
-                level["tripwires"].append(pygame.Rect(x, y, tile_size, tile_size))
-            elif tile_char == "F":
-                level["floating_pickups"].append(pygame.Rect(x, y, tile_size, tile_size))
-
-    return level
-
-
-def move_with_collision(x, y, dx, dy, size, walls):
-    """Move by (dx, dy) one axis at a time, undoing whichever axis would
-    land inside a wall -- this is what lets you slide along a wall instead
-    of getting stuck the moment you bump into it diagonally."""
-    new_x = x + dx
-    if pygame.Rect(new_x, y, size, size).collidelist(walls) != -1:
-        new_x = x
-    new_y = y + dy
-    if pygame.Rect(new_x, new_y, size, size).collidelist(walls) != -1:
-        new_y = y
-    return new_x, new_y
-
-
-WINDOW_WIDTH = 1024
-WINDOW_HEIGHT = 768
-FPS = 60
-BACKGROUND_COLOR = (20, 20, 40)  # dark space-blue
-TEXT_COLOR = (255, 255, 255)
-
-SQUIRREL_COLOR = (255, 140, 0)  # orange -- heat-signature color, matches the theme
-SQUIRREL_SIZE = 40
-SQUIRREL_SPEED = 300  # pixels per second
-
-ANIMATION_SPEED = 10  # how fast the bounce cycles
-BOUNCE_HEIGHT = 8      # how many pixels it hops up
-
-VIPER_COLOR = (0, 200, 255)  # cool cyan -- heat-vision-camera color
-VIPER_SIZE = 50
-VIPER_PATROL_SPEED = 150   # pixels per second while patrolling
-VIPER_CHASE_SPEED = 220    # faster while chasing, but still slower than the
-                            # squirrel's own top speed -- you can outrun it
-                            # if you react in time
-VIPER_DETECTION_RANGE = 250  # pixels -- how close before it notices you
-VIPER_PATROL_LEFT = 100
-VIPER_PATROL_RIGHT = WINDOW_WIDTH - 100 - VIPER_SIZE
-
-VIPER_BLIND_DURATION = 3.0  # seconds V.I.P.E.R. can't see after a dirt hit
-VIPER_BLINDED_COLOR = (80, 80, 90)  # dim gray -- visually shows it can't see
-
-STASIS_DURATION = 3.0  # seconds spent in the stasis bubble after being caught
-STASIS_BUBBLE_COLOR = (200, 230, 255)  # pale icy-blue bubble
-
-PARTICLE_COLOR = (139, 90, 43)  # dirt brown
-PARTICLE_SIZE = 4
-PARTICLE_COUNT = 10        # particles spawned per kick
-PARTICLE_LIFETIME = 0.4    # seconds each particle lives
-PARTICLE_SPEED_MIN = 150
-PARTICLE_SPEED_MAX = 300
-PARTICLE_SPREAD_DEGREES = 40  # cone width the burst fans out into
-
-TAUNT_COLOR = (255, 230, 80)  # bright yellow -- reads as playful, not urgent
-TAUNT_DURATION = 1.5  # seconds a taunt bubble is shown before it's gone
-TAUNT_RISE_SPEED = 30  # pixels per second it drifts upward
-TAUNT_PHRASES = ["Nyah nyah!", "Too slow!", "Can't catch me!", "Nice try!"]
-
-WHOOPEE_COLOR = (230, 120, 180)  # comic pink -- distinct from every other game element
-VIPER_STUN_DURATION = 2.0  # seconds V.I.P.E.R. is fully frozen after a landmine
-
-JUMP_PAD_COLOR = (255, 215, 0)  # gold -- reads as "special", distinct from everything else
-JUMP_DISTANCE = 150  # pixels the squirrel is launched, more than one tile wide
-JUMP_COOLDOWN = 0.4  # seconds after a launch before the pad can fire again
-
-DECOY_DURATION = 5.0  # seconds a decoy lasts before it vanishes unused
-
-TAG_DURATION = 4.0  # seconds V.I.P.E.R. stays locked on after losing direct range
-
-SHIELD_COLOR = (80, 220, 120)  # protective green -- reads as "power-up"
-INVULNERABLE_DURATION = 1.5  # seconds of safety right after a shield absorbs a catch
-
-PREDICTION_TIME = 0.3  # seconds V.I.P.E.R. aims ahead of the squirrel's current heading
-
-TIME_BUBBLE_COLOR = (150, 110, 230)  # violet -- reads as a distortion field
-TIME_BUBBLE_SLOW_FACTOR = 0.3  # V.I.P.E.R.'s speed while inside a bubble
-
-GRAVITY_ZONE_COLOR = (220, 60, 60)  # red -- reads as a hazard/warning zone
-
-TRIPWIRE_COLOR = (255, 200, 0)  # amber -- drawn as a taut line, not a filled tile
-
-TELEPORT_DISTANCE = 200  # pixels -- a bit farther than a jump-pad launch
-TELEPORT_COOLDOWN = 6.0  # seconds before the squirrel can teleport again
-TAIL_FLAG_DURATION = 0.4  # seconds the tail-flag pose shows after a teleport
-
-ROUND_DURATION = 45.0  # seconds per round in a 2-player match
-
-GAMEPAD_DEADZONE = 0.3  # how far a stick must tilt before it counts as a direction
-
-SPEED_SCALE_PER_CATCH = 0.03  # +3% speed for both squirrel and V.I.P.E.R. per catch
-MAX_SPEED_MULTIPLIER = 1.8    # caps the escalation so it never becomes unplayable
-
-FLOATING_COLOR = (200, 240, 255)  # pale cyan -- reads as "light/airborne"
-FLOATING_DURATION = 5.0  # seconds of hazard immunity after picking one up
+WEAPON_TIERS = {
+    1: {"speed": 14, "color_outer": (255, 140, 0), "color_core": (255, 230, 80), "dmg": 20, "name": "AMBER SPARK"},
+    2: {"speed": 19, "color_outer": (0, 220, 255), "color_core": (200, 255, 255), "dmg": 30, "name": "CYAN PULSE"},
+    3: {"speed": 25, "color_outer": (220, 50, 255), "color_core": (255, 180, 255), "dmg": 45, "name": "MAGENTA NOVA"},
+    4: {"speed": 29, "color_outer": (40, 255, 120), "color_core": (210, 255, 220), "dmg": 60, "name": "EMERALD FURY"},
+    5: {"speed": 35, "color_outer": (255, 50, 120), "color_core": (255, 255, 255), "dmg": 85, "name": "HYPER OVERDRIVE"},
+}
 
 
 async def main():
-    pygame.init()
-    screen = pygame.display.set_mode((WINDOW_WIDTH, WINDOW_HEIGHT))
-    pygame.display.set_caption("MODIS_NeonTail")
+    SCREEN_WIDTH, SCREEN_HEIGHT = 800, 600
+    screen = pygame.display.set_mode((SCREEN_WIDTH, SCREEN_HEIGHT))
+    pygame.display.set_caption("MODIS NeonTail - 100 Levels")
     clock = pygame.time.Clock()
-    font = pygame.font.SysFont(None, 36)  # None = pygame's default built-in font
-    title_font = pygame.font.SysFont(None, 72)
 
-    # A connected gamepad, if any, is treated as an alternative to arrow
-    # keys -- so it drives whatever Player A currently controls, whether
-    # that's the squirrel (vs_ai, or round 1 of a 2-player match) or
-    # V.I.P.E.R. (round 2).
-    pygame.joystick.init()
-    joystick = pygame.joystick.Joystick(0) if pygame.joystick.get_count() > 0 else None
+    font = pygame.font.SysFont("consolas", 16, bold=True)
+    big_font = pygame.font.SysFont("consolas", 34, bold=True)
+    title_font = pygame.font.SysFont("consolas", 40, bold=True)
 
-    caught_sound = pygame.mixer.Sound(SOUND_DIR / f"caught{AUDIO_EXT}")
-    kick_sound = pygame.mixer.Sound(SOUND_DIR / f"kick{AUDIO_EXT}")
-    blind_sound = pygame.mixer.Sound(SOUND_DIR / f"blind{AUDIO_EXT}")
-    landmine_sound = pygame.mixer.Sound(SOUND_DIR / f"landmine{AUDIO_EXT}")
-    score_up_sound = pygame.mixer.Sound(SOUND_DIR / f"score_up{AUDIO_EXT}")
+    scale = 2
+    v_preview = pygame.transform.scale(create_viper_sprite(False), (84 * 1.4, 54 * 1.4))
 
-    pygame.mixer.music.load(MUSIC_PATH)
-    pygame.mixer.music.set_volume(0.4)  # quieter than the sound effects
+    # Game States: 'HOW_TO_PLAY', 'PLAYING', 'WIN_CELEBRATION'
+    game_state = "HOW_TO_PLAY"
+    current_level = 1
+    max_levels = 100
 
-    squirrel_sprite = pygame.image.load(SPRITE_DIR / "squirrel.png").convert_alpha()
-    squirrel_tail_flag_sprite = pygame.image.load(SPRITE_DIR / "squirrel_tail_flag.png").convert_alpha()
-    viper_sprite = pygame.image.load(SPRITE_DIR / "viper.png").convert_alpha()
+    # Physics & stats
+    player_x, player_y = 70.0, 360.0
+    vel_x, vel_y = 0.0, 0.0
+    gravity = 0.55
+    floor_y = 440.0
+    is_grounded = True
+    player_max_hp = 100
+    player_hp = player_max_hp
 
-    # Tinted once at startup rather than every frame -- BLEND_RGBA_MULT
-    # multiplies each pixel's color by the fill color, so a copy of the
-    # sprite becomes a gray or pink silhouette without losing its shape.
-    viper_sprite_blinded = viper_sprite.copy()
-    viper_sprite_blinded.fill(VIPER_BLINDED_COLOR, special_flags=pygame.BLEND_RGBA_MULT)
-    viper_sprite_stunned = viper_sprite.copy()
-    viper_sprite_stunned.fill(WHOOPEE_COLOR, special_flags=pygame.BLEND_RGBA_MULT)
+    # Special Squirrel Moves
+    vanish_timer = 0
+    vanish_cooldown = 0
+    dash_timer = 0
+    dash_cooldown = 0
+    dash_dir = 1
+    ghost_trails = []
 
-    # game_state is "menu" (title screen) or "playing" (gameplay running).
-    game_state = "menu"
+    # Weapon & Progress
+    power_tier = 1
+    power_charge = 0.0
+    max_power_charge = 100.0
 
-    # game_mode is "vs_ai" (V.I.P.E.R. is AI-controlled, the default) or
-    # "two_player" (V.I.P.E.R. is controlled by a second human on WASD).
-    game_mode = "vs_ai"
-    match_round = 1              # which round of a 2-player match (1 or 2)
-    round_timer = ROUND_DURATION
-    round_catches = [None, None]  # each round's viper-catches, once it ends
+    shoot_cooldown = 0
+    tail_anim_timer = 0
+    total_score = 0
+    combo_hits = 0
+    combo_timer = 0
+    level_banner_timer = 90
 
-    save_data = load_save()
-    lifetime_catches = save_data["lifetime_catches"]
+    # 5-Second Celebration System (300 frames @ 60 FPS)
+    celebration_frames = 300
+    celebration_timer = celebration_frames
+    fireworks = []
 
-    level_number = save_data["last_level"]
-    level_select_choice = level_number  # which level is highlighted on the select screen
-    level = reset_level(level_number)
-    walls = level["walls"]
-    landmines = level["landmines"]
-    jump_pads = level["jump_pads"]
-    shields = level["shields"]
-    time_bubbles = level["time_bubbles"]
-    gravity_zones = level["gravity_zones"]
-    tripwires = level["tripwires"]
-    floating_pickups = level["floating_pickups"]
-    squirrel_x, squirrel_y = level["squirrel_start"]
-    viper_x, viper_y = level["viper_start"]
-    viper_patrol_y = level["viper_patrol_y"]
-    jump_cooldown_timer = 0.0
-    teleport_cooldown_timer = 0.0
-    floating_timer = 0.0
-    tail_flag_timer = 0.0
-    has_shield = False
-    invulnerable_timer = 0.0
-    animation_timer = 0.0
+    def spawn_wave(lvl):
+        enemies = []
+        is_boss_wave = (lvl % 10 == 0)
+        if is_boss_wave:
+            enemies.append(ViperEnemy(lvl, is_boss=True, offset_x=0))
+        else:
+            num_drones = min(3, 1 + (lvl // 15))
+            for i in range(num_drones):
+                enemies.append(ViperEnemy(lvl, is_boss=False, offset_x=i * 55))
+        return enemies
 
-    # squirrel_state is "free" (normal play) or "stasis" (caught, frozen
-    # in the bubble for STASIS_DURATION seconds before being released).
-    squirrel_state = "free"
-    stasis_timer = 0.0
+    enemies = spawn_wave(current_level)
+    player_bullets = []
+    enemy_bullets = []
+    energy_pickups = []
 
-    viper_direction = 1  # 1 = moving right, -1 = moving left
-
-    # viper_state is "active" (can see/chase normally) or "blinded"
-    # (dirt hit it -- just patrols obliviously until blind_timer runs out).
-    viper_state = "active"
-    blind_timer = 0.0
-    stun_timer = 0.0
-    tag_timer = 0.0
-
-    score = 0            # how many times you've been caught
-    game_time = 0.0       # total seconds played, counts up
-
-    facing_x, facing_y = 1, 0  # direction the squirrel last moved/faced
-    particles = []              # each particle is a dict: x, y, vx, vy, lifetime
-    taunts = []                  # each taunt is a dict: text, x, y, age
-    decoy = None                 # None, or a dict: x, y, timer
+    hit_sparks = []
+    floating_texts = []
 
     running = True
     while running:
-        delta_time = clock.tick(FPS) / 1000
-
-        # 1. Handle input/events
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
                 running = False
-            if event.type == pygame.KEYDOWN and event.key == pygame.K_ESCAPE:
-                if game_state == "menu":
-                    running = False
-                elif game_state == "playing":
-                    game_state = "paused"
-                    pygame.mixer.music.pause()
-                elif game_state == "paused":
-                    game_state = "playing"
-                    pygame.mixer.music.unpause()
-                elif game_state == "level_select":
-                    game_state = "menu"
-                elif game_state == "match_over":
-                    game_mode = "vs_ai"
-                    game_state = "menu"
-            if game_state == "menu":
-                if event.type == pygame.KEYDOWN and event.key in (pygame.K_RETURN, pygame.K_KP_ENTER):
-                    game_mode = "vs_ai"
-                    game_state = "playing"
-                    pygame.mixer.music.play(loops=-1)
-                if event.type == pygame.KEYDOWN and event.key == pygame.K_l:
-                    level_select_choice = level_number
-                    game_state = "level_select"
-                if event.type == pygame.KEYDOWN and event.key == pygame.K_2:
-                    game_mode = "two_player"
-                    level = reset_level(level_number)
-                    walls = level["walls"]
-                    landmines = level["landmines"]
-                    jump_pads = level["jump_pads"]
-                    shields = level["shields"]
-                    time_bubbles = level["time_bubbles"]
-                    gravity_zones = level["gravity_zones"]
-                    tripwires = level["tripwires"]
-                    floating_pickups = level["floating_pickups"]
-                    squirrel_x, squirrel_y = level["squirrel_start"]
-                    viper_x, viper_y = level["viper_start"]
-                    viper_patrol_y = level["viper_patrol_y"]
-                    viper_direction = 1
-                    squirrel_state = "free"
-                    stasis_timer = 0.0
-                    viper_state = "active"
-                    blind_timer = 0.0
-                    stun_timer = 0.0
-                    tag_timer = 0.0
-                    jump_cooldown_timer = 0.0
-                    teleport_cooldown_timer = 0.0
-                    floating_timer = 0.0
-                    tail_flag_timer = 0.0
-                    has_shield = False
-                    invulnerable_timer = 0.0
-                    facing_x, facing_y = 1, 0
-                    particles = []
-                    taunts = []
-                    decoy = None
-                    score = 0
-                    match_round = 1
-                    round_timer = ROUND_DURATION
-                    round_catches = [None, None]
-                    game_state = "playing"
-                    pygame.mixer.music.play(loops=-1)
-            elif game_state == "level_select":
-                if event.type == pygame.KEYDOWN and event.key in (pygame.K_LEFT, pygame.K_a):
-                    level_select_choice = (level_select_choice - 2) % LEVEL_COUNT + 1
-                if event.type == pygame.KEYDOWN and event.key in (pygame.K_RIGHT, pygame.K_d):
-                    level_select_choice = level_select_choice % LEVEL_COUNT + 1
-                if event.type == pygame.KEYDOWN and event.key in (pygame.K_RETURN, pygame.K_KP_ENTER):
-                    level_number = level_select_choice
-                    level = reset_level(level_number)
-                    walls = level["walls"]
-                    landmines = level["landmines"]
-                    jump_pads = level["jump_pads"]
-                    shields = level["shields"]
-                    time_bubbles = level["time_bubbles"]
-                    gravity_zones = level["gravity_zones"]
-                    tripwires = level["tripwires"]
-                    floating_pickups = level["floating_pickups"]
-                    squirrel_x, squirrel_y = level["squirrel_start"]
-                    viper_x, viper_y = level["viper_start"]
-                    viper_patrol_y = level["viper_patrol_y"]
-                    viper_direction = 1
-                    squirrel_state = "free"
-                    stasis_timer = 0.0
-                    viper_state = "active"
-                    blind_timer = 0.0
-                    stun_timer = 0.0
-                    tag_timer = 0.0
-                    jump_cooldown_timer = 0.0
-                    teleport_cooldown_timer = 0.0
-                    floating_timer = 0.0
-                    tail_flag_timer = 0.0
-                    has_shield = False
-                    invulnerable_timer = 0.0
-                    facing_x, facing_y = 1, 0
-                    particles = []
-                    taunts = []
-                    decoy = None
-                    game_mode = "vs_ai"
-                    game_state = "playing"
-                    write_save(level_number, lifetime_catches)
-                    pygame.mixer.music.play(loops=-1)
-            elif game_state == "match_over":
-                if event.type == pygame.KEYDOWN and event.key in (pygame.K_RETURN, pygame.K_KP_ENTER):
-                    game_mode = "vs_ai"
-                    game_state = "menu"
-            elif game_state == "paused":
-                if event.type == pygame.KEYDOWN and event.key == pygame.K_q:
-                    running = False
-            elif game_state == "playing":
-                if event.type == pygame.KEYDOWN and event.key == pygame.K_n:
-                    level_number = level_number % LEVEL_COUNT + 1  # wraps 10 -> 1
-                    level = reset_level(level_number)
-                    walls = level["walls"]
-                    landmines = level["landmines"]
-                    jump_pads = level["jump_pads"]
-                    shields = level["shields"]
-                    time_bubbles = level["time_bubbles"]
-                    gravity_zones = level["gravity_zones"]
-                    tripwires = level["tripwires"]
-                    floating_pickups = level["floating_pickups"]
-                    squirrel_x, squirrel_y = level["squirrel_start"]
-                    viper_x, viper_y = level["viper_start"]
-                    viper_patrol_y = level["viper_patrol_y"]
-                    viper_direction = 1
-                    squirrel_state = "free"
-                    stasis_timer = 0.0
-                    viper_state = "active"
-                    blind_timer = 0.0
-                    stun_timer = 0.0
-                    tag_timer = 0.0
-                    jump_cooldown_timer = 0.0
-                    teleport_cooldown_timer = 0.0
-                    floating_timer = 0.0
-                    tail_flag_timer = 0.0
-                    has_shield = False
-                    invulnerable_timer = 0.0
-                    facing_x, facing_y = 1, 0
-                    particles = []
-                    taunts = []
-                    decoy = None
-                    write_save(level_number, lifetime_catches)
-                if event.type == pygame.KEYDOWN and event.key == pygame.K_p:
-                    level_number = (level_number - 2) % LEVEL_COUNT + 1  # wraps 1 -> LEVEL_COUNT
-                    level = reset_level(level_number)
-                    walls = level["walls"]
-                    landmines = level["landmines"]
-                    jump_pads = level["jump_pads"]
-                    shields = level["shields"]
-                    time_bubbles = level["time_bubbles"]
-                    gravity_zones = level["gravity_zones"]
-                    tripwires = level["tripwires"]
-                    floating_pickups = level["floating_pickups"]
-                    squirrel_x, squirrel_y = level["squirrel_start"]
-                    viper_x, viper_y = level["viper_start"]
-                    viper_patrol_y = level["viper_patrol_y"]
-                    viper_direction = 1
-                    squirrel_state = "free"
-                    stasis_timer = 0.0
-                    viper_state = "active"
-                    blind_timer = 0.0
-                    stun_timer = 0.0
-                    tag_timer = 0.0
-                    jump_cooldown_timer = 0.0
-                    teleport_cooldown_timer = 0.0
-                    floating_timer = 0.0
-                    tail_flag_timer = 0.0
-                    has_shield = False
-                    invulnerable_timer = 0.0
-                    facing_x, facing_y = 1, 0
-                    particles = []
-                    taunts = []
-                    decoy = None
-                    write_save(level_number, lifetime_catches)
-                if event.type == pygame.KEYDOWN and event.key == pygame.K_SPACE:
-                    if squirrel_state == "free":
-                        kick_sound.play()
-                        base_angle = math.atan2(facing_y, facing_x)
-                        spread = math.radians(PARTICLE_SPREAD_DEGREES)
-                        kick_x = squirrel_x + SQUIRREL_SIZE / 2
-                        kick_y = squirrel_y + SQUIRREL_SIZE / 2
-                        for _ in range(PARTICLE_COUNT):
-                            angle = base_angle + random.uniform(-spread / 2, spread / 2)
-                            speed = random.uniform(PARTICLE_SPEED_MIN, PARTICLE_SPEED_MAX)
-                            particles.append({
-                                "x": kick_x,
-                                "y": kick_y,
-                                "vx": math.cos(angle) * speed,
-                                "vy": math.sin(angle) * speed,
-                                "lifetime": PARTICLE_LIFETIME,
-                            })
-                if event.type == pygame.KEYDOWN and event.key == pygame.K_f:
-                    if squirrel_state == "free" and decoy is None:
-                        decoy = {
-                            "x": squirrel_x + SQUIRREL_SIZE / 2,
-                            "y": squirrel_y + SQUIRREL_SIZE / 2,
-                            "timer": DECOY_DURATION,
-                        }
-                if event.type == pygame.KEYDOWN and event.key == pygame.K_t:
-                    if squirrel_state == "free" and teleport_cooldown_timer <= 0:
-                        teleport_dx = facing_x * TELEPORT_DISTANCE
-                        teleport_dy = facing_y * TELEPORT_DISTANCE
-                        squirrel_x, squirrel_y = move_with_collision(
-                            squirrel_x, squirrel_y, teleport_dx, teleport_dy, SQUIRREL_SIZE, walls
-                        )
-                        squirrel_x = max(0, min(WINDOW_WIDTH - SQUIRREL_SIZE, squirrel_x))
-                        squirrel_y = max(0, min(WINDOW_HEIGHT - SQUIRREL_SIZE, squirrel_y))
-                        teleport_cooldown_timer = TELEPORT_COOLDOWN
-                        tail_flag_timer = TAIL_FLAG_DURATION
+            if event.type == pygame.KEYDOWN:
+                if game_state == "HOW_TO_PLAY" and event.key in (pygame.K_RETURN, pygame.K_SPACE):
+                    game_state = "PLAYING"
+                # Quick restart from celebration
+                if game_state == "WIN_CELEBRATION" and event.key in (pygame.K_RETURN, pygame.K_r):
+                    game_state = "HOW_TO_PLAY"
+                    current_level = 1
 
-        # 2. Update game state -- gameplay only advances while playing, so
-        # the menu screen doesn't move or count down behind the scenes.
-        if game_state == "playing":
-            game_time += delta_time
+        screen.fill((10, 12, 22))
 
-            # Both the squirrel and V.I.P.E.R. get faster as score (catches
-            # this session/round) rises, capped so it never spirals out of
-            # control. Applying the SAME multiplier to both keeps V.I.P.E.R.
-            # always slower than the squirrel, preserving the "you can
-            # always outrun it" rule from Phase 3.
-            speed_multiplier_from_score = min(1 + score * SPEED_SCALE_PER_CATCH, MAX_SPEED_MULTIPLIER)
+        # Background grid
+        for gx in range(0, SCREEN_WIDTH, 50):
+            pygame.draw.line(screen, (20, 24, 40), (gx, 0), (gx, SCREEN_HEIGHT))
+        for gy in range(0, SCREEN_HEIGHT, 50):
+            pygame.draw.line(screen, (20, 24, 40), (0, gy), (SCREEN_WIDTH, gy))
 
-            # Round timer and role swap -- only relevant in a 2-player
-            # match. score doubles as "catches so far this round" here,
-            # so it gets archived into round_catches before being zeroed
-            # for the next round.
-            if game_mode == "two_player":
-                round_timer -= delta_time
-                if round_timer <= 0:
-                    if match_round == 1:
-                        round_catches[0] = score
-                        match_round = 2
-                        level = reset_level(level_number)
-                        walls = level["walls"]
-                        landmines = level["landmines"]
-                        jump_pads = level["jump_pads"]
-                        shields = level["shields"]
-                        time_bubbles = level["time_bubbles"]
-                        gravity_zones = level["gravity_zones"]
-                        tripwires = level["tripwires"]
-                        floating_pickups = level["floating_pickups"]
-                        squirrel_x, squirrel_y = level["squirrel_start"]
-                        viper_x, viper_y = level["viper_start"]
-                        viper_patrol_y = level["viper_patrol_y"]
-                        viper_direction = 1
-                        squirrel_state = "free"
-                        stasis_timer = 0.0
-                        viper_state = "active"
-                        blind_timer = 0.0
-                        stun_timer = 0.0
-                        tag_timer = 0.0
-                        jump_cooldown_timer = 0.0
-                        teleport_cooldown_timer = 0.0
-                        floating_timer = 0.0
-                        tail_flag_timer = 0.0
-                        has_shield = False
-                        invulnerable_timer = 0.0
-                        facing_x, facing_y = 1, 0
-                        particles = []
-                        taunts = []
-                        decoy = None
-                        score = 0
-                        round_timer = ROUND_DURATION
-                    else:
-                        # Round 2 just ended -- show the winner screen.
-                        # game_mode stays "two_player" until the player
-                        # leaves match_over, since the screen still needs
-                        # to know it was a 2-player match to draw itself.
-                        round_catches[1] = score
-                        game_state = "match_over"
+        current_weapon = WEAPON_TIERS[power_tier]
 
-            keys = pygame.key.get_pressed()
-            is_moving = False
-            move_dx = 0
-            move_dy = 0
+        s_normal = pygame.transform.scale(
+            create_squirrel_sprite(False, current_weapon["color_outer"], alpha=255), (72 * scale, 60 * scale)
+        )
+        s_alert = pygame.transform.scale(
+            create_squirrel_sprite(True, current_weapon["color_outer"], alpha=255), (72 * scale, 60 * scale)
+        )
+        s_ghost = pygame.transform.scale(
+            create_squirrel_sprite(True, (0, 240, 255), alpha=70), (72 * scale, 60 * scale)
+        )
 
-            # A connected gamepad's left stick or D-pad works as an extra
-            # source for the arrow-key directions, checked once here and
-            # reused wherever arrows are read below.
-            gamepad_left = gamepad_right = gamepad_up = gamepad_down = False
-            if joystick is not None:
-                axis_x = joystick.get_axis(0)
-                axis_y = joystick.get_axis(1)
-                if axis_x < -GAMEPAD_DEADZONE:
-                    gamepad_left = True
-                elif axis_x > GAMEPAD_DEADZONE:
-                    gamepad_right = True
-                if axis_y < -GAMEPAD_DEADZONE:
-                    gamepad_up = True
-                elif axis_y > GAMEPAD_DEADZONE:
-                    gamepad_down = True
-                if joystick.get_numhats() > 0:
-                    hat_x, hat_y = joystick.get_hat(0)
-                    if hat_x < 0:
-                        gamepad_left = True
-                    elif hat_x > 0:
-                        gamepad_right = True
-                    if hat_y > 0:  # a hat's y is +1 for up, unlike screen y
-                        gamepad_up = True
-                    elif hat_y < 0:
-                        gamepad_down = True
+        # ==================== STATE 1: HOW TO PLAY & POWER SURVIVAL BRIEFING ====================
+        if game_state == "HOW_TO_PLAY":
+            t_surf = title_font.render("MODIS NEON TAIL", True, (255, 140, 0))
+            sub_surf = font.render("MISSION BRIEFING: SURVIVAL & CONTROL SYSTEMS", True, (0, 220, 255))
+            screen.blit(t_surf, (SCREEN_WIDTH // 2 - t_surf.get_width() // 2, 20))
+            screen.blit(sub_surf, (SCREEN_WIDTH // 2 - sub_surf.get_width() // 2, 65))
 
-            arrow_left = keys[pygame.K_LEFT] or gamepad_left
-            arrow_right = keys[pygame.K_RIGHT] or gamepad_right
-            arrow_up = keys[pygame.K_UP] or gamepad_up
-            arrow_down = keys[pygame.K_DOWN] or gamepad_down
+            # Controls Box
+            box_left = pygame.Rect(40, 95, 350, 395)
+            pygame.draw.rect(screen, (18, 22, 38), box_left, border_radius=10)
+            pygame.draw.rect(screen, (0, 180, 220), box_left, 2, border_radius=10)
 
-            # Gravity flip zones reverse the squirrel's controls -- checked
-            # against its position entering this frame, before this frame's
-            # own movement is applied. Skipped while floating (hazard
-            # immunity from a floating pickup).
-            controls_flipped = floating_timer <= 0 and pygame.Rect(squirrel_x, squirrel_y, SQUIRREL_SIZE, SQUIRREL_SIZE).collidelist(gravity_zones) != -1
+            title_ctrl = font.render("=== ALL CONTROL KEYS ===", True, (255, 215, 60))
+            screen.blit(title_ctrl, (60, 108))
 
-            # No player input while caught -- the squirrel is frozen in the bubble.
-            # In vs_ai mode either key set works, as it always has. In
-            # two_player mode only ONE physical player's keys drive the
-            # squirrel at a time, and which one depends on match_round --
-            # Player A (arrows) in round 1, Player B (WASD) in round 2.
-            squirrel_uses_arrows = game_mode == "vs_ai" or (game_mode == "two_player" and match_round == 1)
-            squirrel_uses_wasd = game_mode == "vs_ai" or (game_mode == "two_player" and match_round == 2)
+            controls_list = [
+                ("[ A / D or L/R ]", "Sprint Left / Right"),
+                ("[ W / UP / C ]", "Jet Jump & High Leap"),
+                ("[ S / DOWN ]", "Tail Helicopter Glide (in air)"),
+                ("[ SHIFT / X ]", "CYBER CLOAK (Vanish/Invulnerable)"),
+                ("[ V Key ]", "WARP SWOOP (Instant forward dash)"),
+                ("[ SPACEBAR ]", "Fire Evolving Neon Acorns"),
+                ("[ 'N' Key ]", "Skip level (Testing shortcut)"),
+                ("[ 'R' Key ]", "Instant Mission Retry"),
+            ]
+            y_pos = 138
+            for k, d in controls_list:
+                screen.blit(font.render(k, True, (255, 230, 100)), (55, y_pos))
+                screen.blit(font.render(d, True, (215, 220, 235)), (55, y_pos + 17))
+                y_pos += 36
 
-            if squirrel_state == "free":
-                if (squirrel_uses_arrows and arrow_left) or (squirrel_uses_wasd and keys[pygame.K_a]):
-                    move_dx -= SQUIRREL_SPEED * speed_multiplier_from_score * delta_time
-                    is_moving = True
-                    facing_x, facing_y = -1, 0
-                if (squirrel_uses_arrows and arrow_right) or (squirrel_uses_wasd and keys[pygame.K_d]):
-                    move_dx += SQUIRREL_SPEED * speed_multiplier_from_score * delta_time
-                    is_moving = True
-                    facing_x, facing_y = 1, 0
-                if (squirrel_uses_arrows and arrow_up) or (squirrel_uses_wasd and keys[pygame.K_w]):
-                    move_dy -= SQUIRREL_SPEED * speed_multiplier_from_score * delta_time
-                    is_moving = True
-                    facing_x, facing_y = 0, -1
-                if (squirrel_uses_arrows and arrow_down) or (squirrel_uses_wasd and keys[pygame.K_s]):
-                    move_dy += SQUIRREL_SPEED * speed_multiplier_from_score * delta_time
-                    is_moving = True
-                    facing_x, facing_y = 0, 1
+            # How Power Helps You Survive Box
+            box_right = pygame.Rect(410, 95, 350, 395)
+            pygame.draw.rect(screen, (18, 22, 38), box_right, border_radius=10)
+            pygame.draw.rect(screen, (255, 140, 0), box_right, 2, border_radius=10)
 
-                # Reverse the actual movement and facing (not the raw key
-                # mapping above) -- only when a key was pressed this frame,
-                # so a stale facing from an earlier frame never gets flipped
-                # a second time while the squirrel is standing still.
-                if is_moving and controls_flipped:
-                    move_dx, move_dy = -move_dx, -move_dy
-                    facing_x, facing_y = -facing_x, -facing_y
+            title_pwr = font.render("=== HOW POWER SAVES YOU ===", True, (255, 140, 0))
+            screen.blit(title_pwr, (430, 108))
 
-            # Recover actual pixels-per-second velocity from this frame's
-            # already-delta_time-scaled movement -- V.I.P.E.R. uses this to
-            # predict where the squirrel is heading, not just where it is.
-            squirrel_velocity_x = move_dx / delta_time if delta_time > 0 else 0
-            squirrel_velocity_y = move_dy / delta_time if delta_time > 0 else 0
+            power_perks = [
+                ("[ 2X TRAVEL SPEED ]", "Bullets cross screen instantly so"),
+                ("", "drones have zero reaction time."),
+                ("[ EXPANDED HITBOX ]", "Larger neon shells ensure direct hits"),
+                ("", "even against erratic zig-zagging foes."),
+                ("[ RAPID COOLDOWN ]", "Power cuts firing delays in half,"),
+                ("", "allowing lethal continuous salvos."),
+                ("[ BOSS HEALTH SHRED ]", "Tiers 4-5 deal 4x base damage to"),
+                ("", "destroy crimson Overlords quickly."),
+                ("[ STAGE REPAIR ]", "Clearing each level restores +30 HP."),
+            ]
+            y_pos_r = 138
+            for label, desc in power_perks:
+                if label:
+                    screen.blit(font.render(label, True, (0, 255, 180)), (425, y_pos_r))
+                if desc:
+                    screen.blit(font.render(desc, True, (215, 220, 235)), (425, y_pos_r + (17 if label else 0)))
+                y_pos_r += 32 if label else 18
 
-            squirrel_x, squirrel_y = move_with_collision(
-                squirrel_x, squirrel_y, move_dx, move_dy, SQUIRREL_SIZE, walls
-            )
-            squirrel_x = max(0, min(WINDOW_WIDTH - SQUIRREL_SIZE, squirrel_x))
-            squirrel_y = max(0, min(WINDOW_HEIGHT - SQUIRREL_SIZE, squirrel_y))
+            # Blinking Start Bar
+            tail_anim_timer += 1
+            if (tail_anim_timer // 25) % 2 == 0:
+                p_surf = big_font.render(">> PRESS ENTER OR SPACE TO COMMENCE <<", True, (100, 255, 150))
+                screen.blit(p_surf, (SCREEN_WIDTH // 2 - p_surf.get_width() // 2, 520))
 
-            if is_moving:
-                animation_timer += delta_time
-            else:
-                animation_timer = 0.0
-            bounce = abs(math.sin(animation_timer * ANIMATION_SPEED)) * BOUNCE_HEIGHT
-            squirrel_rect = pygame.Rect(squirrel_x, squirrel_y - bounce, SQUIRREL_SIZE, SQUIRREL_SIZE)
+            pygame.display.flip()
+            clock.tick(60)
+            await asyncio.sleep(0)
+            continue
 
-            # Jump-pads launch the squirrel in its current facing direction.
-            # Reusable (unlike landmines), so a short cooldown -- not removal
-            # from the list -- is what stops one firing every single frame
-            # while the squirrel is still standing on it.
-            jump_cooldown_timer -= delta_time
-            teleport_cooldown_timer -= delta_time
-            tail_flag_timer -= delta_time
-            if (
-                squirrel_state == "free"
-                and jump_cooldown_timer <= 0
-                and squirrel_rect.collidelist(jump_pads) != -1
-            ):
-                launch_dx = facing_x * JUMP_DISTANCE
-                launch_dy = facing_y * JUMP_DISTANCE
-                squirrel_x, squirrel_y = move_with_collision(
-                    squirrel_x, squirrel_y, launch_dx, launch_dy, SQUIRREL_SIZE, walls
-                )
-                squirrel_x = max(0, min(WINDOW_WIDTH - SQUIRREL_SIZE, squirrel_x))
-                squirrel_y = max(0, min(WINDOW_HEIGHT - SQUIRREL_SIZE, squirrel_y))
-                squirrel_rect = pygame.Rect(squirrel_x, squirrel_y - bounce, SQUIRREL_SIZE, SQUIRREL_SIZE)
-                jump_cooldown_timer = JUMP_COOLDOWN
+        # ==================== STATE 3: 5-SECOND GRAND WIN CELEBRATION ====================
+        if game_state == "WIN_CELEBRATION":
+            celebration_timer -= 1
+            remaining_seconds = max(0, int(math.ceil(celebration_timer / 60.0)))
 
-            # Picking up a shield grants one-catch protection -- a one-time
-            # pickup, removed from the level once collected.
-            if squirrel_state == "free" and not has_shield:
-                hit_shield = squirrel_rect.collidelist(shields)
-                if hit_shield != -1:
-                    del shields[hit_shield]
-                    has_shield = True
+            # Spawn colorful fireworks
+            if celebration_timer % 6 == 0:
+                fw_x = random.randint(100, SCREEN_WIDTH - 100)
+                fw_y = random.randint(80, 340)
+                base_color = random.choice([
+                    (255, 215, 0), (0, 240, 255), (255, 50, 120), (50, 255, 120), (255, 140, 0)
+                ])
+                for _ in range(25):
+                    speed = random.uniform(2.5, 7.5)
+                    angle = random.uniform(0, math.pi * 2)
+                    fireworks.append({
+                        "x": fw_x,
+                        "y": fw_y,
+                        "vx": math.cos(angle) * speed,
+                        "vy": math.sin(angle) * speed,
+                        "color": base_color,
+                        "radius": random.randint(2, 5),
+                        "life": random.randint(25, 45),
+                    })
 
-            # Picking up a floating pickup grants hazard immunity for a
-            # few seconds -- a one-time pickup, but the buff itself starts
-            # counting down immediately rather than being saved for later.
-            if squirrel_state == "free":
-                hit_floating = squirrel_rect.collidelist(floating_pickups)
-                if hit_floating != -1:
-                    del floating_pickups[hit_floating]
-                    floating_timer = FLOATING_DURATION
-
-            floating_timer -= delta_time
-
-            # Crossing a tripwire alerts V.I.P.E.R. to the squirrel's exact
-            # position regardless of distance, by boosting the same
-            # tag_timer "locked on" system Tracker Tags already use --
-            # reusable, not consumed, so walking back over it re-triggers.
-            # Skipped while floating, since floating grants hazard immunity.
-            if squirrel_state == "free" and floating_timer <= 0 and squirrel_rect.collidelist(tripwires) != -1:
-                tag_timer = TAG_DURATION
-
-            # Brief invulnerability right after a shield absorbs a catch,
-            # so the same overlap can't immediately catch you again.
-            if invulnerable_timer > 0:
-                invulnerable_timer -= delta_time
-
-            # Squirrel stasis countdown -- independent of what V.I.P.E.R. is doing.
-            if squirrel_state == "stasis":
-                stasis_timer -= delta_time
-                if stasis_timer <= 0:
-                    squirrel_state = "free"
-                    squirrel_x = WINDOW_WIDTH / 2
-                    squirrel_y = WINDOW_HEIGHT / 2
-
-            # V.I.P.E.R. blinded countdown -- independent of the squirrel.
-            if viper_state == "blinded":
-                blind_timer -= delta_time
-                if blind_timer <= 0:
-                    viper_state = "active"
-
-            # V.I.P.E.R. stunned countdown -- a landmine freezes it completely,
-            # so unlike blinded it doesn't even patrol until this runs out.
-            if viper_state == "stunned":
-                stun_timer -= delta_time
-                if stun_timer <= 0:
-                    viper_state = "active"
-
-            # The decoy expires on its own if V.I.P.E.R. never reaches it.
-            if decoy is not None:
-                decoy["timer"] -= delta_time
-                if decoy["timer"] <= 0:
-                    decoy = None
-
-            # Time bubbles slow V.I.P.E.R. drastically while it's inside one
-            # -- checked against its position entering this frame, before
-            # any of this frame's own movement is applied.
-            in_time_bubble = pygame.Rect(viper_x, viper_y, VIPER_SIZE, VIPER_SIZE).collidelist(time_bubbles) != -1
-            viper_speed_multiplier = (TIME_BUBBLE_SLOW_FACTOR if in_time_bubble else 1.0) * speed_multiplier_from_score
-
-            if viper_state == "stunned":
-                pass  # frozen in place -- no movement at all
-            elif game_mode == "two_player":
-                # A human drives V.I.P.E.R. directly -- no chase, patrol,
-                # prediction, or lock-on logic applies at all. It can move
-                # any time (unlike the AI, it doesn't need a target), but
-                # stays frozen while blinded, same as the AI would, and
-                # still slows down in a time bubble. Whichever player
-                # ISN'T currently the squirrel controls it -- WASD (Player
-                # B) in round 1, arrows (Player A) in round 2.
-                if viper_state != "blinded":
-                    viper_move_dx = 0
-                    viper_move_dy = 0
-                    if match_round == 1:
-                        if keys[pygame.K_a]:
-                            viper_move_dx -= VIPER_CHASE_SPEED * viper_speed_multiplier * delta_time
-                        if keys[pygame.K_d]:
-                            viper_move_dx += VIPER_CHASE_SPEED * viper_speed_multiplier * delta_time
-                        if keys[pygame.K_w]:
-                            viper_move_dy -= VIPER_CHASE_SPEED * viper_speed_multiplier * delta_time
-                        if keys[pygame.K_s]:
-                            viper_move_dy += VIPER_CHASE_SPEED * viper_speed_multiplier * delta_time
-                    else:
-                        if arrow_left:
-                            viper_move_dx -= VIPER_CHASE_SPEED * viper_speed_multiplier * delta_time
-                        if arrow_right:
-                            viper_move_dx += VIPER_CHASE_SPEED * viper_speed_multiplier * delta_time
-                        if arrow_up:
-                            viper_move_dy -= VIPER_CHASE_SPEED * viper_speed_multiplier * delta_time
-                        if arrow_down:
-                            viper_move_dy += VIPER_CHASE_SPEED * viper_speed_multiplier * delta_time
-                    viper_x, viper_y = move_with_collision(viper_x, viper_y, viper_move_dx, viper_move_dy, VIPER_SIZE, walls)
-            elif squirrel_state == "free" and viper_state == "active":
-                # Distance to the REAL squirrel drives tag_timer, regardless
-                # of whether a decoy is what's actually being chased right
-                # now -- this is what makes the lock-on "sticky": tag_timer
-                # keeps getting refreshed while in range, and only starts
-                # counting down once the squirrel steps back out of it.
-                squirrel_dx = (squirrel_x + SQUIRREL_SIZE / 2) - (viper_x + VIPER_SIZE / 2)
-                squirrel_dy = (squirrel_y + SQUIRREL_SIZE / 2) - (viper_y + VIPER_SIZE / 2)
-                distance_to_squirrel = math.hypot(squirrel_dx, squirrel_dy)
-
-                if distance_to_squirrel <= VIPER_DETECTION_RANGE:
-                    tag_timer = TAG_DURATION
+            # Update & draw fireworks
+            for fw in fireworks[:]:
+                fw["x"] += fw["vx"]
+                fw["y"] += fw["vy"]
+                fw["life"] -= 1
+                if fw["life"] <= 0:
+                    fireworks.remove(fw)
                 else:
-                    tag_timer -= delta_time
+                    pygame.draw.circle(screen, fw["color"], (int(fw["x"]), int(fw["y"])), fw["radius"])
 
-                if distance_to_squirrel <= VIPER_DETECTION_RANGE or tag_timer > 0:
-                    # What V.I.P.E.R. is trying to reach: a decoy takes
-                    # priority over the real squirrel if V.I.P.E.R. is close
-                    # enough to it to notice -- otherwise it aims a little
-                    # ahead of the squirrel's current heading, not straight
-                    # at it, which is what makes the chase feel smarter.
-                    target_x = squirrel_x + SQUIRREL_SIZE / 2 + squirrel_velocity_x * PREDICTION_TIME
-                    target_y = squirrel_y + SQUIRREL_SIZE / 2 + squirrel_velocity_y * PREDICTION_TIME
-                    if decoy is not None:
-                        decoy_distance = math.hypot(decoy["x"] - (viper_x + VIPER_SIZE / 2), decoy["y"] - (viper_y + VIPER_SIZE / 2))
-                        if decoy_distance <= VIPER_DETECTION_RANGE:
-                            target_x, target_y = decoy["x"], decoy["y"]
+            # Victory Banners
+            w_surf = title_font.render("CONGRATULATIONS, AGENT!", True, (255, 215, 60))
+            sub_w = big_font.render("ALL 100 LEVELS CONQUERED", True, (0, 255, 200))
+            score_w = font.render(f"FINAL CYBER SCORE: {total_score}", True, (255, 255, 255))
+            time_w = big_font.render(f"Returning to Base in: {remaining_seconds}s", True, (255, 90, 140))
 
-                    dx = target_x - (viper_x + VIPER_SIZE / 2)
-                    dy = target_y - (viper_y + VIPER_SIZE / 2)
-                    target_distance = math.hypot(dx, dy)
+            screen.blit(w_surf, (SCREEN_WIDTH // 2 - w_surf.get_width() // 2, 130))
+            screen.blit(sub_w, (SCREEN_WIDTH // 2 - sub_w.get_width() // 2, 190))
+            screen.blit(score_w, (SCREEN_WIDTH // 2 - score_w.get_width() // 2, 260))
+            screen.blit(time_w, (SCREEN_WIDTH // 2 - time_w.get_width() // 2, 320))
 
-                    if target_distance > 0:
-                        chase_dx = (dx / target_distance) * VIPER_CHASE_SPEED * viper_speed_multiplier * delta_time
-                        chase_dy = (dy / target_distance) * VIPER_CHASE_SPEED * viper_speed_multiplier * delta_time
-                        viper_x, viper_y = move_with_collision(viper_x, viper_y, chase_dx, chase_dy, VIPER_SIZE, walls)
+            # Celebratory Squirrel Doing Air Flips
+            tail_anim_timer += 1
+            flip_s = s_alert if (tail_anim_timer // 10) % 2 == 0 else s_normal
+            screen.blit(flip_s, (SCREEN_WIDTH // 2 - 72, 410))
+
+            if celebration_timer <= 0:
+                game_state = "HOW_TO_PLAY"
+                current_level = 1
+                player_hp = player_max_hp
+                celebration_timer = celebration_frames
+                fireworks.clear()
+
+            pygame.display.flip()
+            clock.tick(60)
+            await asyncio.sleep(0)
+            continue
+
+        # ==================== STATE 2: ACTIVE GAMEPLAY ====================
+        keys = pygame.key.get_pressed()
+        is_moving = False
+
+        if player_hp > 0:
+            if keys[pygame.K_LEFT] or keys[pygame.K_a]:
+                vel_x = -5.8
+                dash_dir = -1
+                is_moving = True
+            elif keys[pygame.K_RIGHT] or keys[pygame.K_d]:
+                vel_x = 5.8
+                dash_dir = 1
+                is_moving = True
+            else:
+                vel_x *= 0.7
+
+            # Jet Jump (W / UP / C)
+            if (keys[pygame.K_UP] or keys[pygame.K_w] or keys[pygame.K_c]) and is_grounded:
+                vel_y = -13.5
+                is_grounded = False
+                is_moving = True
+                for _ in range(6):
+                    hit_sparks.append([
+                        player_x + 50,
+                        player_y + 110,
+                        random.uniform(-3.0, 3.0),
+                        random.uniform(1.0, 4.0),
+                        random.randint(2, 4),
+                        (255, 140, 0),
+                        15,
+                    ])
+
+            # Tail Helicopter Glide
+            if (keys[pygame.K_DOWN] or keys[pygame.K_s]) and not is_grounded:
+                if vel_y > 1.8:
+                    vel_y = 1.8
+
+            # Cyber Cloak
+            if vanish_cooldown > 0:
+                vanish_cooldown -= 1
+            if (keys[pygame.K_LSHIFT] or keys[pygame.K_RSHIFT] or keys[pygame.K_x]) and vanish_cooldown == 0 and vanish_timer == 0:
+                vanish_timer = 120
+                vanish_cooldown = 300
+                floating_texts.append(["CLOAK ACTIVATED!", player_x + 10, player_y - 20, (0, 240, 255), 40])
+                for _ in range(12):
+                    hit_sparks.append([
+                        player_x + 60,
+                        player_y + 50,
+                        random.uniform(-4, 4),
+                        random.uniform(-4, 4),
+                        3,
+                        (0, 240, 255),
+                        20,
+                    ])
+
+            # Warp Dash
+            if dash_cooldown > 0:
+                dash_cooldown -= 1
+            if keys[pygame.K_v] and dash_cooldown == 0 and dash_timer == 0:
+                dash_timer = 14
+                dash_cooldown = 110
+                floating_texts.append(["WARP SWOOP!", player_x + 20, player_y - 15, (255, 230, 80), 30])
+
+            if dash_timer > 0:
+                dash_timer -= 1
+                vel_x = dash_dir * 18.0
+                vel_y = 0.0
+                ghost_trails.append({"x": player_x, "y": player_y, "alpha": 180})
+
+            if dash_timer == 0:
+                vel_y += gravity
+                player_y += vel_y
+
+            player_x += vel_x
+
+            if player_y >= floor_y:
+                player_y = floor_y
+                vel_y = 0.0
+                is_grounded = True
+            if player_y <= 50:
+                player_y = 50
+                vel_y = 0.0
+
+            player_x = max(10, min(SCREEN_WIDTH - 250, player_x))
+
+            # Fire weapon
+            if shoot_cooldown > 0:
+                shoot_cooldown -= 1
+            if keys[pygame.K_SPACE] and shoot_cooldown == 0:
+                b_width = 16 + (power_tier * 3)
+                b_height = 8 + power_tier
+                bullet_info = {
+                    "rect": pygame.Rect(player_x + 115, player_y + 48, b_width, b_height),
+                    "speed": current_weapon["speed"],
+                    "color_outer": current_weapon["color_outer"],
+                    "color_core": current_weapon["color_core"],
+                    "dmg": current_weapon["dmg"],
+                }
+                player_bullets.append(bullet_info)
+                shoot_cooldown = max(7, 13 - power_tier)
+
+        if vanish_timer > 0:
+            vanish_timer -= 1
+
+        # Restart
+        if player_hp <= 0 and keys[pygame.K_r]:
+            player_hp = player_max_hp
+            power_tier = 1
+            power_charge = 0.0
+            player_x, player_y = 70.0, 360.0
+            vel_x, vel_y = 0.0, 0.0
+            enemies = spawn_wave(current_level)
+            player_bullets.clear()
+            enemy_bullets.clear()
+            energy_pickups.clear()
+            hit_sparks.clear()
+            floating_texts.clear()
+            ghost_trails.clear()
+            combo_hits = 0
+
+        # Skip level testing
+        if keys[pygame.K_n] and level_banner_timer == 0:
+            enemies.clear()
+
+        for gt in ghost_trails[:]:
+            gt["alpha"] -= 16
+            if gt["alpha"] <= 0:
+                ghost_trails.remove(gt)
+
+        if combo_timer > 0:
+            combo_timer -= 1
+        else:
+            combo_hits = 0
+
+        # Dynamic Enemy AI Updates
+        for e in enemies:
+            can_fire = e.update(SCREEN_HEIGHT, SCREEN_WIDTH, player_y)
+            if can_fire and player_hp > 0:
+                bullet_y = e.y + (e.height // 2)
+                bullet_color = (255, 60, 90) if e.is_boss else (0, 220, 255)
+                enemy_bullets.append({
+                    "rect": pygame.Rect(e.x - 10, bullet_y, 16, 6),
+                    "color": bullet_color,
+                    "dmg": 18 if e.is_boss else 10,
+                })
+
+        # Update Projectiles
+        for b in player_bullets[:]:
+            b["rect"].x += b["speed"]
+            if b["rect"].x > SCREEN_WIDTH:
+                player_bullets.remove(b)
+
+        for b in enemy_bullets[:]:
+            b["rect"].x -= 9
+            if b["rect"].x < 0:
+                enemy_bullets.remove(b)
+
+        p_hitbox = pygame.Rect(player_x + 30, player_y + 20, 80, 80)
+        for ep in energy_pickups[:]:
+            ep[0] += ep[2]
+            ep[1] += ep[3]
+            ep[4] -= 1
+            pickup_rect = pygame.Rect(ep[0] - 8, ep[1] - 8, 16, 16)
+            if p_hitbox.colliderect(pickup_rect):
+                power_charge += 30.0
+                energy_pickups.remove(ep)
+                floating_texts.append(["+POWER!", player_x + 50, player_y - 10, (100, 255, 180), 30])
+            elif ep[4] <= 0:
+                energy_pickups.remove(ep)
+
+        for b in enemy_bullets[:]:
+            if p_hitbox.colliderect(b["rect"]):
+                if vanish_timer > 0:
+                    enemy_bullets.remove(b)
+                    floating_texts.append(["DODGED!", player_x + 30, player_y - 15, (0, 240, 255), 25])
                 else:
-                    viper_y = viper_patrol_y
-                    patrol_dx = VIPER_PATROL_SPEED * viper_direction * viper_speed_multiplier * delta_time
-                    viper_x, viper_y = move_with_collision(viper_x, viper_y, patrol_dx, 0, VIPER_SIZE, walls)
-                    if viper_x <= VIPER_PATROL_LEFT:
-                        viper_x = VIPER_PATROL_LEFT
-                        viper_direction = 1
-                    elif viper_x >= VIPER_PATROL_RIGHT:
-                        viper_x = VIPER_PATROL_RIGHT
-                        viper_direction = -1
+                    player_hp -= b["dmg"]
+                    enemy_bullets.remove(b)
+                    combo_hits = 0
+
+        # Target hits
+        for b in player_bullets[:]:
+            for e in enemies[:]:
+                if e.rect.colliderect(b["rect"]):
+                    if b in player_bullets:
+                        player_bullets.remove(b)
+
+                    dmg = b["dmg"]
+                    e.hp -= dmg
+                    e.flash_timer = 3
+
+                    combo_hits += 1
+                    combo_timer = 70
+                    hit_points = dmg + (combo_hits * 5)
+                    total_score += hit_points
+
+                    power_charge += 12.0
+                    if power_charge >= max_power_charge and power_tier < 5:
+                        power_charge = 0.0
+                        power_tier += 1
+                        floating_texts.append([
+                            f"WEAPON UPGRADED: {WEAPON_TIERS[power_tier]['name']}!",
+                            SCREEN_WIDTH // 2 - 140,
+                            SCREEN_HEIGHT // 2 - 80,
+                            WEAPON_TIERS[power_tier]['color_outer'],
+                            50,
+                        ])
+
+                    impact_x = b["rect"].x + 8
+                    impact_y = b["rect"].y + 4
+                    for _ in range(8):
+                        hit_sparks.append([
+                            impact_x,
+                            impact_y,
+                            random.uniform(-4.0, 4.0),
+                            random.uniform(-3.5, 3.5),
+                            random.randint(2, 5),
+                            random.choice([b["color_outer"], b["color_core"], (255, 255, 255)]),
+                            random.randint(10, 20),
+                        ])
+
+                    floating_texts.append([
+                        f"+{hit_points}",
+                        impact_x - 10,
+                        impact_y - 15,
+                        b["color_core"],
+                        30,
+                    ])
+
+                    if e.hp <= 0:
+                        enemies.remove(e)
+                        total_score += 200 if e.is_boss else 75
+                        energy_pickups.append([
+                            e.x + e.width // 2,
+                            e.y + e.height // 2,
+                            random.uniform(-1.5, -0.5),
+                            random.uniform(-1.0, 1.0),
+                            180,
+                        ])
+                        for _ in range(22):
+                            hit_sparks.append([
+                                e.x + e.width // 2,
+                                e.y + e.height // 2,
+                                random.uniform(-6.0, 6.0),
+                                random.uniform(-6.0, 6.0),
+                                random.randint(3, 7),
+                                (255, 70, 90) if e.is_boss else (0, 220, 255),
+                                25,
+                            ])
+                    break
+
+        # Level Progression & Win Condition
+        if len(enemies) == 0:
+            if current_level < max_levels:
+                current_level += 1
+                level_banner_timer = 80
+                player_hp = min(player_max_hp, player_hp + 30)
+                enemies = spawn_wave(current_level)
+                player_bullets.clear()
+                enemy_bullets.clear()
             else:
-                # Squirrel in stasis, or V.I.P.E.R. blinded -- either way there's
-                # nothing to chase right now, so just patrol.
-                viper_y = viper_patrol_y
-                patrol_dx = VIPER_PATROL_SPEED * viper_direction * viper_speed_multiplier * delta_time
-                viper_x, viper_y = move_with_collision(viper_x, viper_y, patrol_dx, 0, VIPER_SIZE, walls)
-                if viper_x <= VIPER_PATROL_LEFT:
-                    viper_x = VIPER_PATROL_LEFT
-                    viper_direction = 1
-                elif viper_x >= VIPER_PATROL_RIGHT:
-                    viper_x = VIPER_PATROL_RIGHT
-                    viper_direction = -1
+                # 100 Levels beaten -> Start 5-second victory celebration!
+                game_state = "WIN_CELEBRATION"
+                celebration_timer = celebration_frames
+                fireworks.clear()
 
-            viper_x = max(0, min(WINDOW_WIDTH - VIPER_SIZE, viper_x))
-            viper_y = max(0, min(WINDOW_HEIGHT - VIPER_SIZE, viper_y))
-            viper_rect = pygame.Rect(viper_x, viper_y, VIPER_SIZE, VIPER_SIZE)
+        # Update hit particles & floating texts
+        for spark in hit_sparks[:]:
+            spark[0] += spark[2]
+            spark[1] += spark[3]
+            spark[6] -= 1
+            if spark[6] <= 0:
+                hit_sparks.remove(spark)
 
-            # V.I.P.E.R. reaching the decoy "investigates" it -- consumed,
-            # freeing up another drop, with no other gameplay effect.
-            if decoy is not None and viper_rect.collidepoint(decoy["x"], decoy["y"]):
-                decoy = None
+        for ft in floating_texts[:]:
+            ft[2] -= 1.2
+            ft[4] -= 1
+            if ft[4] <= 0:
+                floating_texts.remove(ft)
 
-            # Stepping on a landmine stuns V.I.P.E.R. and uses the landmine
-            # up -- only while active, so it can't be re-triggered or
-            # stacked with blinded/stunned.
-            if viper_state == "active":
-                hit_landmine = viper_rect.collidelist(landmines)
-                if hit_landmine != -1:
-                    del landmines[hit_landmine]
-                    viper_state = "stunned"
-                    stun_timer = VIPER_STUN_DURATION
-                    landmine_sound.play()
+        # Draw Ghost Trails
+        for gt in ghost_trails:
+            g_surf = s_ghost.copy()
+            g_surf.set_alpha(gt["alpha"])
+            screen.blit(g_surf, (gt["x"], gt["y"]))
 
-            # Advance every particle and drop the ones whose lifetime ran out.
-            for particle in particles:
-                particle["x"] += particle["vx"] * delta_time
-                particle["y"] += particle["vy"] * delta_time
-                particle["lifetime"] -= delta_time
-            particles = [p for p in particles if p["lifetime"] > 0]
+        # Draw Bullets
+        for b in player_bullets:
+            pygame.draw.ellipse(screen, b["color_core"], b["rect"])
+            pygame.draw.ellipse(screen, b["color_outer"], b["rect"], 3)
 
-            # Drift every taunt bubble upward and age it out once its
-            # display time is up.
-            for taunt in taunts:
-                taunt["y"] -= TAUNT_RISE_SPEED * delta_time
-                taunt["age"] += delta_time
-            taunts = [t for t in taunts if t["age"] < TAUNT_DURATION]
+        for b in enemy_bullets:
+            pygame.draw.ellipse(screen, b["color"], b["rect"])
 
-            # A dirt particle touching V.I.P.E.R. blinds it -- only while it
-            # can currently see, so an already-blinded hit doesn't reset the timer.
-            if viper_state == "active":
-                for particle in particles:
-                    if viper_rect.collidepoint(particle["x"], particle["y"]):
-                        viper_state = "blinded"
-                        blind_timer = VIPER_BLIND_DURATION
-                        blind_sound.play()
-                        taunts.append({
-                            "text": random.choice(TAUNT_PHRASES),
-                            "x": squirrel_x + SQUIRREL_SIZE / 2,
-                            "y": squirrel_y - 20,
-                            "age": 0.0,
-                        })
-                        break
+        for ep in energy_pickups:
+            pygame.draw.circle(screen, (0, 255, 180), (int(ep[0]), int(ep[1])), 7)
+            pygame.draw.circle(screen, (255, 255, 255), (int(ep[0]), int(ep[1])), 4)
 
-            # Tag check -- only while free and not still invulnerable from a
-            # just-consumed shield, so an already-caught squirrel can't be
-            # "caught again" mid-bubble or immediately re-caught same frame.
-            if squirrel_state == "free" and invulnerable_timer <= 0 and squirrel_rect.colliderect(viper_rect):
-                if has_shield:
-                    has_shield = False
-                    invulnerable_timer = INVULNERABLE_DURATION
-                else:
-                    squirrel_state = "stasis"
-                    stasis_timer = STASIS_DURATION
-                    score += 1
-                    lifetime_catches += 1
-                    write_save(level_number, lifetime_catches)
-                    caught_sound.play()
-                    score_up_sound.play()
+        for spark in hit_sparks:
+            pygame.draw.circle(screen, spark[5], (int(spark[0]), int(spark[1])), spark[4])
 
-        # 3. Draw everything
-        screen.fill(BACKGROUND_COLOR)
+        for ft in floating_texts:
+            f_surf = font.render(ft[0], True, ft[3])
+            screen.blit(f_surf, (int(ft[1]), int(ft[2])))
 
-        if game_state == "menu":
-            title_surface = title_font.render("MODIS_NeonTail", True, TEXT_COLOR)
-            title_rect = title_surface.get_rect(center=(WINDOW_WIDTH / 2, WINDOW_HEIGHT / 2 - 40))
-            screen.blit(title_surface, title_rect)
+        # Ground Floor Indicator
+        pygame.draw.line(screen, (35, 45, 75), (0, int(floor_y + 115)), (SCREEN_WIDTH, int(floor_y + 115)), 2)
 
-            prompt_surface = font.render("ENTER to Play  --  L: Level Select  --  2: 2-Player", True, TEXT_COLOR)
-            prompt_rect = prompt_surface.get_rect(center=(WINDOW_WIDTH / 2, WINDOW_HEIGHT / 2 + 40))
-            screen.blit(prompt_surface, prompt_rect)
+        # Draw Player
+        tail_anim_timer += 1
+        use_alert = (tail_anim_timer // 15) % 2 == 1 or is_moving or not is_grounded
+        current_squirrel = s_alert if use_alert else s_normal
 
-            info_text = f"Last played: Level {level_number}   Lifetime catches: {lifetime_catches}"
-            info_surface = font.render(info_text, True, TEXT_COLOR)
-            info_rect = info_surface.get_rect(center=(WINDOW_WIDTH / 2, WINDOW_HEIGHT / 2 + 100))
-            screen.blit(info_surface, info_rect)
-
-        elif game_state == "level_select":
-            title_surface = title_font.render("Select Level", True, TEXT_COLOR)
-            title_rect = title_surface.get_rect(center=(WINDOW_WIDTH / 2, WINDOW_HEIGHT / 2 - 80))
-            screen.blit(title_surface, title_rect)
-
-            choice_surface = title_font.render(f"< {level_select_choice} >", True, TEXT_COLOR)
-            choice_rect = choice_surface.get_rect(center=(WINDOW_WIDTH / 2, WINDOW_HEIGHT / 2))
-            screen.blit(choice_surface, choice_rect)
-
-            hint_surface = font.render("Left/Right to choose, Enter to start, Esc to go back", True, TEXT_COLOR)
-            hint_rect = hint_surface.get_rect(center=(WINDOW_WIDTH / 2, WINDOW_HEIGHT / 2 + 80))
-            screen.blit(hint_surface, hint_rect)
-
-        elif game_state == "match_over":
-            # Player A was V.I.P.E.R. in round 2, Player B in round 1 --
-            # whoever caught more while chasing wins.
-            player_a_catches = round_catches[1] if round_catches[1] is not None else 0
-            player_b_catches = round_catches[0] if round_catches[0] is not None else 0
-
-            if player_a_catches > player_b_catches:
-                result_text = "Player A Wins!"
-            elif player_b_catches > player_a_catches:
-                result_text = "Player B Wins!"
+        if player_hp > 0:
+            if vanish_timer > 0:
+                if (vanish_timer // 4) % 2 == 0:
+                    screen.blit(s_ghost, (player_x, player_y))
             else:
-                result_text = "It's a Tie!"
+                screen.blit(current_squirrel, (player_x, player_y))
 
-            title_surface = title_font.render(result_text, True, TEXT_COLOR)
-            title_rect = title_surface.get_rect(center=(WINDOW_WIDTH / 2, WINDOW_HEIGHT / 2 - 80))
-            screen.blit(title_surface, title_rect)
+        # Draw Enemies
+        for e in enemies:
+            screen.blit(e.sprite, (e.x, e.y))
+            bar_color = (255, 50, 70) if e.is_boss else (0, 210, 255)
+            draw_bar(screen, int(e.x), int(e.y) - 12, e.width, 8, e.hp, e.max_hp, bar_color)
 
-            scores_text = f"Player A viper-catches: {player_a_catches}   Player B viper-catches: {player_b_catches}"
-            scores_surface = font.render(scores_text, True, TEXT_COLOR)
-            scores_rect = scores_surface.get_rect(center=(WINDOW_WIDTH / 2, WINDOW_HEIGHT / 2))
-            screen.blit(scores_surface, scores_rect)
+        # HUD
+        screen.blit(font.render("AGENT S.Q.U.I.R.E.L.", True, (255, 180, 80)), (20, 10))
+        draw_bar(screen, 20, 30, 140, 10, player_hp, player_max_hp, (255, 140, 0))
 
-            hint_surface = font.render("Enter or Esc to return to the menu", True, TEXT_COLOR)
-            hint_rect = hint_surface.get_rect(center=(WINDOW_WIDTH / 2, WINDOW_HEIGHT / 2 + 80))
-            screen.blit(hint_surface, hint_rect)
+        p_label = f"PWR TIER {power_tier}: {current_weapon['name']}"
+        screen.blit(font.render(p_label, True, current_weapon["color_outer"]), (20, 46))
+        draw_bar(screen, 20, 66, 140, 8, power_charge, max_power_charge, current_weapon["color_outer"])
 
-        else:  # game_state == "playing" or "paused"
-            for wall in walls:
-                pygame.draw.rect(screen, TILE_WALL_COLOR, wall)
+        cloak_status = "CLOAK: READY" if vanish_cooldown == 0 else f"CLOAK: {vanish_cooldown // 60}s"
+        dash_status = "DASH: READY" if dash_cooldown == 0 else "DASH: ..."
+        screen.blit(font.render(cloak_status, True, (0, 220, 255) if vanish_cooldown == 0 else (120, 140, 160)), (20, 82))
+        screen.blit(font.render(dash_status, True, (255, 230, 100) if dash_cooldown == 0 else (120, 140, 160)), (140, 82))
 
-            for landmine in landmines:
-                pygame.draw.circle(screen, WHOOPEE_COLOR, landmine.center, landmine.width // 3)
+        level_str = f"LEVEL {current_level} / {max_levels}"
+        if current_level % 10 == 0:
+            level_str += " [BOSS ALERT]"
+        screen.blit(font.render(level_str, True, (255, 230, 100)), (SCREEN_WIDTH // 2 - 80, 12))
+        screen.blit(font.render(f"SCORE: {total_score}", True, (200, 210, 240)), (SCREEN_WIDTH - 150, 12))
 
-            for pad in jump_pads:
-                cx, cy = pad.center
-                half = pad.width // 2 - 6
-                diamond_points = [(cx, cy - half), (cx + half, cy), (cx, cy + half), (cx - half, cy)]
-                pygame.draw.polygon(screen, JUMP_PAD_COLOR, diamond_points)
+        if combo_hits > 1:
+            c_surf = font.render(f"COMBO x{combo_hits}!", True, (255, 100, 220))
+            screen.blit(c_surf, (SCREEN_WIDTH - 150, 34))
 
-            for shield in shields:
-                pygame.draw.circle(screen, SHIELD_COLOR, shield.center, shield.width // 3, width=4)
+        if level_banner_timer > 0:
+            level_banner_timer -= 1
+            b_text = f"LEVEL {current_level}" if current_level % 10 != 0 else f"LEVEL {current_level}: VIPER OVERLORD"
+            color = (255, 70, 90) if current_level % 10 == 0 else (0, 230, 255)
+            b_surf = big_font.render(b_text, True, color)
+            screen.blit(b_surf, (SCREEN_WIDTH // 2 - b_surf.get_width() // 2, SCREEN_HEIGHT // 2 - 50))
 
-            for pickup in floating_pickups:
-                cx, cy = pickup.center
-                half = pickup.width // 3
-                triangle_points = [(cx, cy - half), (cx - half, cy + half), (cx + half, cy + half)]
-                pygame.draw.polygon(screen, FLOATING_COLOR, triangle_points)
-
-            for bubble in time_bubbles:
-                pygame.draw.circle(screen, TIME_BUBBLE_COLOR, bubble.center, bubble.width // 2, width=3)
-
-            for zone in gravity_zones:
-                pygame.draw.rect(screen, GRAVITY_ZONE_COLOR, zone, width=4)
-
-            for wire in tripwires:
-                pygame.draw.line(screen, TRIPWIRE_COLOR, (wire.left, wire.centery), (wire.right, wire.centery), 3)
-
-            if decoy is not None:
-                # A translucent copy of the real sprite -- still visibly
-                # "a squirrel" at a glance, but ghostly enough to read as
-                # a fake once you look closely, the way a decoy should.
-                decoy_sprite = squirrel_sprite.copy()
-                decoy_sprite.set_alpha(120)
-                decoy_rect = decoy_sprite.get_rect(center=(decoy["x"], decoy["y"]))
-                screen.blit(decoy_sprite, decoy_rect)
-
-            if squirrel_state == "stasis":
-                bubble_center = (int(squirrel_x + SQUIRREL_SIZE / 2), int(squirrel_y + SQUIRREL_SIZE / 2))
-                pygame.draw.circle(screen, STASIS_BUBBLE_COLOR, bubble_center, SQUIRREL_SIZE)
-            else:
-                # The tail-flag pose briefly replaces the normal sprite
-                # right after a teleport dodge; both get flipped to face
-                # whichever horizontal direction the squirrel last moved.
-                current_squirrel_sprite = squirrel_tail_flag_sprite if tail_flag_timer > 0 else squirrel_sprite
-                if facing_x < 0:
-                    current_squirrel_sprite = pygame.transform.flip(current_squirrel_sprite, True, False)
-                squirrel_sprite_rect = current_squirrel_sprite.get_rect(center=squirrel_rect.center)
-                screen.blit(current_squirrel_sprite, squirrel_sprite_rect)
-
-                if has_shield:
-                    pygame.draw.rect(screen, SHIELD_COLOR, squirrel_rect.inflate(8, 8), width=3)
-                elif invulnerable_timer > 0:
-                    pygame.draw.rect(screen, TEXT_COLOR, squirrel_rect.inflate(8, 8), width=3)
-                if floating_timer > 0:
-                    # A separate, larger ring -- can show at the same time
-                    # as the shield ring, since the two buffs are independent.
-                    pygame.draw.rect(screen, FLOATING_COLOR, squirrel_rect.inflate(16, 16), width=3)
-
-            if viper_state == "blinded":
-                current_viper_sprite = viper_sprite_blinded
-            elif viper_state == "stunned":
-                current_viper_sprite = viper_sprite_stunned
-            else:
-                current_viper_sprite = viper_sprite
-            viper_sprite_rect = current_viper_sprite.get_rect(center=viper_rect.center)
-            screen.blit(current_viper_sprite, viper_sprite_rect)
-
-            for particle in particles:
-                pygame.draw.circle(screen, PARTICLE_COLOR, (int(particle["x"]), int(particle["y"])), PARTICLE_SIZE)
-
-            for taunt in taunts:
-                taunt_surface = font.render(taunt["text"], True, TAUNT_COLOR)
-                fade = max(0.0, 1.0 - taunt["age"] / TAUNT_DURATION)
-                taunt_surface.set_alpha(int(255 * fade))
-                taunt_rect = taunt_surface.get_rect(center=(taunt["x"], taunt["y"]))
-                screen.blit(taunt_surface, taunt_rect)
-
-            # Score and timer, top-left corner. render() turns text into an
-            # image; blit() draws that image onto the screen.
-            score_surface = font.render(f"Caught: {score}", True, TEXT_COLOR)
-            screen.blit(score_surface, (20, 20))
-
-            minutes = int(game_time // 60)
-            seconds = int(game_time % 60)
-            timer_surface = font.render(f"Time: {minutes:02d}:{seconds:02d}", True, TEXT_COLOR)
-            screen.blit(timer_surface, (20, 60))
-
-            level_surface = font.render(f"Level: {level_number}/{LEVEL_COUNT} (N: next, P: previous)", True, TEXT_COLOR)
-            screen.blit(level_surface, (20, 100))
-
-            if teleport_cooldown_timer > 0:
-                dodge_text = f"Dodge: {teleport_cooldown_timer:.1f}s (T)"
-            else:
-                dodge_text = "Dodge: Ready (T)"
-            dodge_surface = font.render(dodge_text, True, TEXT_COLOR)
-            screen.blit(dodge_surface, (20, 140))
-
-            if game_mode == "two_player":
-                if match_round == 1:
-                    role_text = "Round 1/2: Arrows(A) = Squirrel, WASD(B) = V.I.P.E.R."
-                else:
-                    role_text = "Round 2/2: Arrows(A) = V.I.P.E.R., WASD(B) = Squirrel"
-                mode_surface = font.render(role_text, True, TEXT_COLOR)
-                screen.blit(mode_surface, (20, 180))
-
-                round_time_surface = font.render(f"Round time left: {max(0, int(round_timer))}s", True, TEXT_COLOR)
-                screen.blit(round_time_surface, (20, 220))
-
-            if game_state == "paused":
-                # A semi-transparent black rectangle drawn over everything
-                # else -- set_alpha() controls how see-through it is (0 =
-                # invisible, 255 = solid), so the frozen game shows through.
-                overlay = pygame.Surface((WINDOW_WIDTH, WINDOW_HEIGHT))
-                overlay.set_alpha(150)
-                overlay.fill((0, 0, 0))
-                screen.blit(overlay, (0, 0))
-
-                paused_surface = title_font.render("PAUSED", True, TEXT_COLOR)
-                paused_rect = paused_surface.get_rect(center=(WINDOW_WIDTH / 2, WINDOW_HEIGHT / 2 - 40))
-                screen.blit(paused_surface, paused_rect)
-
-                hint_surface = font.render("Esc to resume, Q to quit", True, TEXT_COLOR)
-                hint_rect = hint_surface.get_rect(center=(WINDOW_WIDTH / 2, WINDOW_HEIGHT / 2 + 40))
-                screen.blit(hint_surface, hint_rect)
+        if player_hp <= 0:
+            over_surf = big_font.render("MISSION FAILED", True, (255, 70, 70))
+            sub_surf = font.render(f"Fell at Level {current_level} - Press 'R' to Retry", True, (240, 240, 240))
+            screen.blit(over_surf, (SCREEN_WIDTH // 2 - over_surf.get_width() // 2, SCREEN_HEIGHT // 2 - 30))
+            screen.blit(sub_surf, (SCREEN_WIDTH // 2 - sub_surf.get_width() // 2, SCREEN_HEIGHT // 2 + 15))
 
         pygame.display.flip()
-
-        # Required by pygbag's browser build -- yields control back to the
-        # browser's own event loop once per frame, since a browser can't
-        # be blocked synchronously the way a desktop OS allows. Harmless
-        # on desktop too, which is why this isn't behind a special case.
+        clock.tick(60)
         await asyncio.sleep(0)
 
     pygame.quit()
