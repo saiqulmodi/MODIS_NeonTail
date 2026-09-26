@@ -1,5 +1,6 @@
 import array
 import asyncio
+import json
 import math
 from pathlib import Path
 import random
@@ -15,6 +16,37 @@ for joy in joysticks:
 
 sprite_dir = Path("assets/sprites")
 sprite_dir.mkdir(parents=True, exist_ok=True)
+SAVE_FILE = Path("save.json")
+
+
+# ==============================================================================
+# PERSISTENT SAVE & LEADERBOARD SYSTEM
+# ==============================================================================
+def load_save_data() -> dict:
+    if SAVE_FILE.exists():
+        try:
+            with open(SAVE_FILE, "r") as f:
+                return json.load(f)
+        except Exception:
+            pass
+    return {"high_score": 0, "max_level_reached": 1, "total_drones_destroyed": 0}
+
+
+def update_save_data(score: int, level: int):
+    data = load_save_data()
+    updated = False
+    if score > data.get("high_score", 0):
+        data["high_score"] = score
+        updated = True
+    if level > data.get("max_level_reached", 1):
+        data["max_level_reached"] = level
+        updated = True
+    if updated:
+        try:
+            with open(SAVE_FILE, "w") as f:
+                json.dump(data, f, indent=2)
+        except Exception:
+            pass
 
 
 # ==============================================================================
@@ -51,7 +83,7 @@ class RetroSoundEngine:
     def __init__(self):
         self.snd_shoot = self.create_tone(880, 240, 0.08, "square", volume=0.25)
         self.snd_v_shoot = self.create_tone(320, 680, 0.09, "sine", volume=0.3)
-        self.snd_laser = self.create_tone(950, 1200, 0.12, "sine", volume=0.25)
+        self.snd_laser = self.create_tone(950, 1200, 0.05, "sine", volume=0.15)
         self.snd_hit = self.create_tone(1100, 350, 0.06, "sine", volume=0.3)
         self.snd_explode = self.create_tone(160, 40, 0.35, "noise", volume=0.45)
         self.snd_shield = self.create_tone(400, 800, 0.15, "sine", volume=0.35)
@@ -98,6 +130,13 @@ DANCE_STYLES = [
     ("JELLY WIGGLE BOUNCE", "Rubber band squish & stretch!"),
     ("CYBER MOONWALK GLIDE", "Smooth backward zero-G slide!"),
     ("SOMERSAULT FLIP CARNIVAL", "Acrobatic backflips with fireworks!")
+]
+
+OVERDRIVE_MUTATORS = [
+    ("LOW GRAVITY ZONE", "Floats high in air; laser recoil kicks backward!"),
+    ("BLACKOUT FOG", "Pitch black arena! Only neon glows reveal targets!"),
+    ("BULLET HELL SURGE", "Drones fire 3-way scatter plasma bursts!"),
+    ("HYPER SPEED STORM", "1.5x arena movement & rapid weapon discharge!")
 ]
 
 
@@ -174,11 +213,12 @@ def create_viper_sprite(is_boss: bool = False, flash_white: bool = False, alpha:
 # SINGLE-PLAYER AI ENEMY CLASS
 # ==============================================================================
 class ViperEnemy:
-    def __init__(self, level: int, is_boss: bool = False):
+    def __init__(self, level: int, is_boss: bool = False, mutator: str = "NONE"):
         self.is_boss = is_boss
         self.scale = 2.8 if is_boss else 1.9
         self.width = int(84 * self.scale)
         self.height = int(54 * self.scale)
+        self.mutator = mutator
 
         self.normal_sprite = pygame.transform.scale(
             create_viper_sprite(is_boss=is_boss, flash_white=False), (self.width, self.height)
@@ -190,17 +230,20 @@ class ViperEnemy:
         self.x = random.uniform(420, 720)
         self.y = random.uniform(80, 500)
 
-        base_hp = 250 if is_boss else 70
-        self.max_hp = base_hp + (level * 18 if is_boss else level * 6)
+        base_hp = 260 if is_boss else 70
+        hp_growth = 22 if is_boss else 8
+        self.max_hp = base_hp + (level * hp_growth)
         self.hp = self.max_hp
 
-        self.speed_stat = 2.5 + min(0.6, level * 0.01)
+        speed_mult = 1.4 if mutator == "HYPER SPEED STORM" else 1.0
+        self.speed_stat = (2.5 + min(1.8, level * 0.015)) * speed_mult
         self.angle = 180.0
         self.is_burrowed = False
         self.burrow_timer = 0
         self.burrow_cooldown = random.randint(180, 360)
 
-        self.cooldown_max = max(22, (42 if is_boss else 54) - int(level * 0.35))
+        rate_bonus = 15 if mutator == "BULLET HELL SURGE" else 0
+        self.cooldown_max = max(14, (40 if is_boss else 52) - int(level * 0.3) - rate_bonus)
         self.shoot_timer = random.randint(0, self.cooldown_max)
         self.flash_timer = 0
 
@@ -215,18 +258,18 @@ class ViperEnemy:
                 self.x = dest[0] - self.width // 2
                 self.y = dest[1] - self.height // 2
                 self.is_burrowed = False
-                self.burrow_cooldown = random.randint(240, 420)
+                self.burrow_cooldown = random.randint(200, 380)
                 SFX.snd_burrow.play()
             return None
 
         if self.burrow_cooldown > 0:
             self.burrow_cooldown -= 1
-        elif len(holes) > 0 and (self.hp < self.max_hp * 0.5 or random.random() < 0.005):
+        elif len(holes) > 0 and (self.hp < self.max_hp * 0.5 or random.random() < 0.006):
             nearest = min(holes, key=lambda h: math.hypot(h[0] - (self.x + self.width // 2), h[1] - (self.y + self.height // 2)))
             dist = math.hypot(nearest[0] - (self.x + self.width // 2), nearest[1] - (self.y + self.height // 2))
             if dist < 35:
                 self.is_burrowed = True
-                self.burrow_timer = 120
+                self.burrow_timer = 110
                 SFX.snd_burrow.play()
                 return None
             else:
@@ -244,15 +287,15 @@ class ViperEnemy:
             target_angle = math.atan2(dy, dx)
             self.angle = math.degrees(target_angle)
 
-            if dist > 250:
-                self.x += math.cos(target_angle) * (self.speed_stat * 0.85)
-                self.y += math.sin(target_angle) * (self.speed_stat * 0.85)
-            elif dist < 160:
-                self.x -= math.cos(target_angle) * (self.speed_stat * 0.75)
-                self.y -= math.sin(target_angle) * (self.speed_stat * 0.75)
+            if dist > 240:
+                self.x += math.cos(target_angle) * (self.speed_stat * 0.9)
+                self.y += math.sin(target_angle) * (self.speed_stat * 0.9)
+            elif dist < 150:
+                self.x -= math.cos(target_angle) * (self.speed_stat * 0.8)
+                self.y -= math.sin(target_angle) * (self.speed_stat * 0.8)
             else:
-                self.x += -math.sin(target_angle) * (self.speed_stat * 0.8)
-                self.y += math.cos(target_angle) * (self.speed_stat * 0.8)
+                self.x += -math.sin(target_angle) * (self.speed_stat * 0.85)
+                self.y += math.cos(target_angle) * (self.speed_stat * 0.85)
 
             self.x = max(20, min(screen_w - self.width - 20, self.x))
             self.y = max(60, min(screen_h - self.height - 20, self.y))
@@ -261,14 +304,22 @@ class ViperEnemy:
         if self.shoot_timer >= self.cooldown_max and not self.is_burrowed:
             self.shoot_timer = 0
             b_angle = math.atan2(target_y - (self.y + self.height // 2), target_x - (self.x + self.width // 2))
-            return {
-                "x": self.x + self.width // 2,
-                "y": self.y + self.height // 2,
-                "vx": math.cos(b_angle) * 7.0,
-                "vy": math.sin(b_angle) * 7.0,
-                "color": (255, 60, 90) if self.is_boss else (0, 220, 255),
-                "dmg": 18 if self.is_boss else 10,
-            }
+
+            shots = []
+            bullet_col = (255, 60, 90) if self.is_boss else (0, 220, 255)
+            shots.append({
+                "x": self.x + self.width // 2, "y": self.y + self.height // 2,
+                "vx": math.cos(b_angle) * 7.5, "vy": math.sin(b_angle) * 7.5,
+                "color": bullet_col, "dmg": 20 if self.is_boss else 12,
+            })
+            if self.mutator == "BULLET HELL SURGE":
+                for spread in (-0.22, 0.22):
+                    shots.append({
+                        "x": self.x + self.width // 2, "y": self.y + self.height // 2,
+                        "vx": math.cos(b_angle + spread) * 7.0, "vy": math.sin(b_angle + spread) * 7.0,
+                        "color": (255, 140, 20), "dmg": 10,
+                    })
+            return shots
         return None
 
     @property
@@ -285,16 +336,14 @@ class ViperEnemy:
 
 
 # ==============================================================================
-# WEAPON TIERS & CYBER LASER RAY SYSTEM
+# WEAPON TIERS & CONTINUOUS LASER RAY SYSTEM
 # ==============================================================================
-# Tiers 1-2: Fast Plasma Projectiles
-# Tiers 3-5: Continuous High-Energy Laser Beams!
 WEAPON_TIERS = {
     1: {"type": "bullet", "speed": 14, "color_outer": (255, 140, 0), "color_core": (255, 230, 80), "dmg": 20, "name": "AMBER SPARK"},
     2: {"type": "bullet", "speed": 19, "color_outer": (0, 220, 255), "color_core": (200, 255, 255), "dmg": 30, "name": "CYAN PULSE"},
-    3: {"type": "laser",  "beam_w": 6,  "color_outer": (220, 50, 255), "color_core": (255, 200, 255), "dmg": 3,  "name": "MAGENTA LASER RAY"},
-    4: {"type": "laser",  "beam_w": 10, "color_outer": (40, 255, 120), "color_core": (210, 255, 220), "dmg": 4,  "name": "EMERALD ION BEAM"},
-    5: {"type": "laser",  "beam_w": 16, "color_outer": (255, 50, 120), "color_core": (255, 255, 255), "dmg": 6,  "name": "HYPER NOVA DEATH-RAY"},
+    3: {"type": "laser",  "beam_w": 8,  "color_outer": (220, 50, 255), "color_core": (255, 200, 255), "dmg": 4,  "name": "MAGENTA LASER RAY"},
+    4: {"type": "laser",  "beam_w": 12, "color_outer": (40, 255, 120), "color_core": (210, 255, 220), "dmg": 6,  "name": "EMERALD ION BEAM"},
+    5: {"type": "laser",  "beam_w": 18, "color_outer": (255, 50, 120), "color_core": (255, 255, 255), "dmg": 9,  "name": "HYPER NOVA DEATH-RAY"},
 }
 
 
@@ -305,6 +354,7 @@ async def main():
     global joysticks
     SCREEN_WIDTH, SCREEN_HEIGHT = 800, 600
     screen = pygame.display.set_mode((SCREEN_WIDTH, SCREEN_HEIGHT))
+    dark_overlay = pygame.Surface((SCREEN_WIDTH, SCREEN_HEIGHT), pygame.SRCALPHA)
     pygame.display.set_caption("MODIS NeonTail - Cyber Combat")
     clock = pygame.time.Clock()
 
@@ -320,7 +370,11 @@ async def main():
     burrow_holes = [(200, 140), (620, 150), (220, 480), (600, 470), (410, 310)]
     active_decoys = []
 
-    # Break & Celebration Timers
+    current_level = 1
+    total_score = 0
+    active_mutator = "NONE"
+    saved_data = load_save_data()
+
     break_timer = 0
     break_winner = "P1"
     break_quote = ""
@@ -330,7 +384,6 @@ async def main():
     bonus_won_by = None
     milestone_count = 0
 
-    # Player 1 State
     p1_x, p1_y = 120.0, 300.0
     p1_speed = 5.4
     p1_max_hp = 300
@@ -343,12 +396,6 @@ async def main():
     p1_power_tier = 1
     p1_power_charge = 0.0
 
-    # Campaign progression
-    current_level = 1
-    max_levels = 100
-    total_score = 0
-
-    # Player 2 Duel State
     p1_wins = 0
     p2_wins = 0
     p2_x, p2_y = 650.0, 300.0
@@ -367,12 +414,14 @@ async def main():
 
     def spawn_campaign_wave(lvl):
         enemies = []
-        if lvl % 10 == 0:
-            enemies.append(ViperEnemy(lvl, is_boss=True))
+        is_boss = (lvl % 10 == 0)
+        mutator = active_mutator if lvl > 100 else "NONE"
+        if is_boss:
+            enemies.append(ViperEnemy(lvl, is_boss=True, mutator=mutator))
         else:
-            num = min(3, 1 + (lvl // 15))
+            num = min(4, 1 + (lvl // 15))
             for _ in range(num):
-                enemies.append(ViperEnemy(lvl, is_boss=False))
+                enemies.append(ViperEnemy(lvl, is_boss=False, mutator=mutator))
         return enemies
 
     campaign_enemies = spawn_campaign_wave(current_level)
@@ -383,11 +432,13 @@ async def main():
     floating_texts = []
 
     def handle_round_conclusion(winner: str, origin_mode: str):
-        nonlocal game_state, break_timer, break_winner, break_quote, break_award, active_dance, bonus_won_by, prev_mode, milestone_count
+        nonlocal game_state, break_timer, break_winner, break_quote, break_award, active_dance, bonus_won_by, prev_mode, milestone_count, active_mutator
         prev_mode = origin_mode
         break_winner = winner
         bonus_won_by = None
         fireworks.clear()
+
+        update_save_data(total_score, current_level)
 
         wins = p1_wins if winner == "P1" else p2_wins
         is_5th_milestone = False
@@ -398,6 +449,9 @@ async def main():
         elif origin_mode == "CAMPAIGN" and current_level > 0 and current_level % 5 == 0 and winner == "P1":
             is_5th_milestone = True
             milestone_count = current_level
+
+        if current_level >= 100 and current_level % 5 == 0:
+            active_mutator = random.choice(OVERDRIVE_MUTATORS)[0]
 
         if is_5th_milestone:
             game_state = "MILESTONE_CELEBRATION"
@@ -487,23 +541,35 @@ async def main():
                     SFX.snd_heal.play()
                     floating_texts.append([f"+{heal_amt} HP", p1_x + 10, p1_y - 20, (100, 255, 120), 35])
 
-            # P1 Decoy
+            # P1 Multi-Image Illusion Ring (Ravan / Shadow Clone Array)
             if game_state in ("CAMPAIGN", "DUEL") and p1_decoys > 0:
                 if (event.type == pygame.KEYDOWN and event.key == pygame.K_f) or \
                    (event.type == pygame.JOYBUTTONDOWN and ps_pad_p1 and event.joy == 0 and event.button == 3):
                     p1_decoys -= 1
-                    active_decoys.append({"x": p1_x, "y": p1_y, "life": 240, "type": "p1"})
+                    clone_count = 8
+                    radius = 75
+                    for i in range(clone_count):
+                        angle = (2.0 * math.pi / clone_count) * i
+                        cx = p1_x + math.cos(angle) * radius
+                        cy = p1_y + math.sin(angle) * radius
+                        active_decoys.append({"x": cx, "y": cy, "life": 260, "type": "p1"})
                     SFX.snd_decoy.play()
-                    floating_texts.append(["HOLOGRAPHIC DECOY DEPLOYED!", p1_x, p1_y - 25, (0, 240, 255), 35])
+                    floating_texts.append(["8-MIRAGE ILLUSION ACTIVE!", p1_x - 30, p1_y - 30, (0, 240, 255), 45])
 
             # P2 Decoy in Duel
             if game_state == "DUEL" and p2_decoys > 0:
                 if (event.type == pygame.KEYDOWN and event.key in (pygame.K_KP7, pygame.K_LEFTBRACKET)) or \
                    (event.type == pygame.JOYBUTTONDOWN and ps_pad_p2 and event.joy == 1 and event.button == 4):
                     p2_decoys -= 1
-                    active_decoys.append({"x": p2_x, "y": p2_y, "life": 240, "type": "p2"})
+                    clone_count = 6
+                    radius = 70
+                    for i in range(clone_count):
+                        angle = (2.0 * math.pi / clone_count) * i
+                        cx = p2_x + math.cos(angle) * radius
+                        cy = p2_y + math.sin(angle) * radius
+                        active_decoys.append({"x": cx, "y": cy, "life": 240, "type": "p2"})
                     SFX.snd_decoy.play()
-                    floating_texts.append(["VIPER HOLOGRAM DEPLOYED!", p2_x, p2_y - 25, (200, 100, 255), 35])
+                    floating_texts.append(["VIPER HOLOGRAM DEPLOYED!", p2_x - 30, p2_y - 25, (200, 100, 255), 35])
 
             # P2 Burrow in Duel
             if game_state == "DUEL" and not p2_is_burrowed and p2_burrow_cd == 0:
@@ -515,6 +581,25 @@ async def main():
                         p2_burrow_timer = 90
                         p2_burrow_cd = 240
                         SFX.snd_burrow.play()
+
+            # QUICK LASER TOGGLE KEY ('L' Key toggles directly to Laser Ray Tiers 3, 4, 5)
+            if event.type == pygame.KEYDOWN and event.key == pygame.K_l and game_state in ("CAMPAIGN", "DUEL"):
+                if p1_power_tier < 3:
+                    p1_power_tier = 3
+                elif p1_power_tier == 3:
+                    p1_power_tier = 4
+                elif p1_power_tier == 4:
+                    p1_power_tier = 5
+                else:
+                    p1_power_tier = 1
+                if game_state == "DUEL":
+                    p2_power_tier = p1_power_tier
+                SFX.snd_win.play()
+                floating_texts.append([f"LASER MODE: {WEAPON_TIERS[p1_power_tier]['name']}!", SCREEN_WIDTH // 2 - 140, 210, WEAPON_TIERS[p1_power_tier]["color_outer"], 50])
+
+            # Level testing cheat: Press 'N' to skip wave
+            if event.type == pygame.KEYDOWN and event.key == pygame.K_n and game_state == "CAMPAIGN":
+                campaign_enemies.clear()
 
             if event.type == pygame.KEYDOWN and event.key == pygame.K_ESCAPE:
                 game_state = "MODE_SELECT"
@@ -532,51 +617,55 @@ async def main():
         if game_state == "MODE_SELECT":
             t_surf = title_font.render("MODIS NEON TAIL", True, (255, 140, 0))
             sub_surf = font.render("CHOOSE GAMEPLAY MODE", True, (0, 220, 255))
-            screen.blit(t_surf, (SCREEN_WIDTH // 2 - t_surf.get_width() // 2, 70))
-            screen.blit(sub_surf, (SCREEN_WIDTH // 2 - sub_surf.get_width() // 2, 115))
+            screen.blit(t_surf, (SCREEN_WIDTH // 2 - t_surf.get_width() // 2, 50))
+            screen.blit(sub_surf, (SCREEN_WIDTH // 2 - sub_surf.get_width() // 2, 95))
 
-            card1 = pygame.Rect(60, 160, 325, 300)
+            lb_txt = f"BEST RECORD: LEVEL {saved_data.get('max_level_reached', 1)} | HIGH SCORE: {saved_data.get('high_score', 0)}"
+            screen.blit(font.render(lb_txt, True, (255, 215, 60)), (SCREEN_WIDTH // 2 - 200, 125))
+
+            card1 = pygame.Rect(60, 155, 325, 310)
             pygame.draw.rect(screen, (18, 22, 38), card1, border_radius=12)
             pygame.draw.rect(screen, (255, 140, 0), card1, 2, border_radius=12)
 
-            screen.blit(big_font.render("1P CAMPAIGN", True, (255, 180, 80)), (80, 180))
+            screen.blit(big_font.render("1P CAMPAIGN", True, (255, 180, 80)), (80, 175))
             lines1 = [
                 "Agent S.Q.U.I.R.E.L. vs AI Swarm",
                 "[PLAYER GETS 3X EVERYTHING]:",
                 "- 3x Max HP (300 Health)",
                 "- 3x Nanotech Med-Kits (6 Kits)",
-                "- 3x Virtual Decoys (6 Holograms)",
+                "- 8-Clone Mirage Illusion on 'F'",
                 "- Tiers 3-5: HIGH-ENERGY LASER RAY",
+                "- Press 'L' to TOGGLE LASER DIRECTLY",
                 "",
                 ">> PRESS '1' OR CROSS (X) <<",
             ]
-            y_c1 = 220
+            y_c1 = 210
             for ln in lines1:
-                col = (100, 255, 150) if ">>" in ln else ((255, 220, 100) if "3X" in ln else (210, 220, 235))
+                col = (100, 255, 150) if ">>" in ln else ((255, 215, 60) if "'L'" in ln or "'F'" in ln else ((255, 220, 100) if "3X" in ln else (210, 220, 235)))
                 screen.blit(font.render(ln, True, col), (75, y_c1))
-                y_c1 += 24
+                y_c1 += 23
 
-            card2 = pygame.Rect(415, 160, 325, 300)
+            card2 = pygame.Rect(415, 155, 325, 310)
             pygame.draw.rect(screen, (18, 22, 38), card2, border_radius=12)
             pygame.draw.rect(screen, (0, 210, 255), card2, 2, border_radius=12)
 
-            screen.blit(big_font.render("2P DUEL (PVP)", True, (0, 220, 255)), (440, 180))
+            screen.blit(big_font.render("2P DUEL (PVP)", True, (0, 220, 255)), (440, 175))
             lines2 = [
                 "P1 (Squirrel) vs P2 (Viper)",
                 "[EQUAL BALANCED POWER]:",
                 "- Equal 120 HP for both players",
-                "- 3 Virtual Image Decoys each",
+                "- Multi-Image Decoys each",
                 "- Tiers 3-5: LASER RAYS FOR BOTH",
                 "- 5-Round Milestone Dance Breaks",
                 "- P2 Burrow & Teleport Ambush",
                 "",
                 ">> PRESS '2' OR CIRCLE (O) <<",
             ]
-            y_c2 = 220
+            y_c2 = 210
             for ln in lines2:
                 col = (100, 255, 150) if ">>" in ln else ((0, 240, 255) if "EQUAL" in ln else (210, 220, 235))
                 screen.blit(font.render(ln, True, col), (430, y_c2))
-                y_c2 += 24
+                y_c2 += 23
 
             pad_msg = "PlayStation Gamepad Connected" if ps_pad_p1 else "Keyboard Connected"
             screen.blit(font.render(f"Controller: {pad_msg} | Esc to Switch Modes", True, (160, 170, 190)), (SCREEN_WIDTH // 2 - 190, 505))
@@ -587,7 +676,7 @@ async def main():
             continue
 
         # ======================================================================
-        # STATE 2A: FAST 1-SECOND TACTICAL ROUND INTERLUDE (ROUNDS 1, 2, 3, 4...)
+        # STATE 2A: FAST 1-SECOND TACTICAL ROUND INTERLUDE
         # ======================================================================
         if game_state == "NORMAL_ROUND_BREAK":
             break_timer -= 1
@@ -601,7 +690,7 @@ async def main():
                 if prev_mode == "CAMPAIGN":
                     game_state = "CAMPAIGN"
                     if break_winner == "P1":
-                        current_level = min(max_levels, current_level + 1)
+                        current_level += 1
                     p1_hp = min(p1_max_hp, p1_hp + 40)
                     campaign_enemies = spawn_campaign_wave(current_level)
                 else:
@@ -617,14 +706,13 @@ async def main():
             continue
 
         # ======================================================================
-        # STATE 2B: 5-SECOND GRAND MILESTONE CELEBRATION (EVERY 5 ROUND WINS)
+        # STATE 2B: 5-SECOND GRAND MILESTONE CELEBRATION
         # ======================================================================
         if game_state == "MILESTONE_CELEBRATION":
             break_timer -= 1
             rem_sec = max(0, int(math.ceil(break_timer / 60.0)))
             t_progress = 300 - break_timer
 
-            # Fireworks burst
             if break_timer % 3 == 0:
                 fx = random.randint(80, SCREEN_WIDTH - 80)
                 fy = random.randint(50, 240)
@@ -643,26 +731,22 @@ async def main():
                 else:
                     pygame.draw.circle(screen, fw["col"], (int(fw["x"]), int(fw["y"])), 3)
 
-            # Golden Tournament Milestone Header
-            m_title = f"*** TOURNAMENT MILESTONE: {milestone_count} ROUNDS CONQUERED! ***"
+            m_title = f"*** OVERDRIVE MILESTONE: WAVE {milestone_count} CONQUERED! ***" if milestone_count > 100 else f"*** TOURNAMENT MILESTONE: {milestone_count} ROUNDS CONQUERED! ***"
             m_surf = title_font.render(m_title, True, (255, 215, 60))
             screen.blit(m_surf, (SCREEN_WIDTH // 2 - m_surf.get_width() // 2, 20))
 
-            # Speech Bubble
             speech_box = pygame.Rect(120, 68, 560, 46)
             pygame.draw.rect(screen, (25, 30, 50), speech_box, border_radius=10)
             pygame.draw.rect(screen, (255, 140, 0) if break_winner == "P1" else (0, 220, 255), speech_box, 2, border_radius=10)
             q_surf = font.render(f'"{break_quote}"', True, (255, 230, 100))
             screen.blit(q_surf, (SCREEN_WIDTH // 2 - q_surf.get_width() // 2, 82))
 
-            # Clown Award Box
             award_box = pygame.Rect(160, 122, 480, 48)
             pygame.draw.rect(screen, (35, 20, 35), award_box, border_radius=8)
             pygame.draw.rect(screen, (255, 100, 200), award_box, 2, border_radius=8)
             screen.blit(font.render(f"[ {break_award[0]} ]", True, (255, 100, 200)), (180, 128))
             screen.blit(font.render(break_award[1], True, (220, 225, 240)), (180, 148))
 
-            # Reflex Challenge Box
             quiz_box = pygame.Rect(100, 178, 600, 78)
             pygame.draw.rect(screen, (15, 35, 30) if bonus_won_by else (18, 24, 45), quiz_box, border_radius=12)
             pygame.draw.rect(screen, (0, 255, 180), quiz_box, 2, border_radius=12)
@@ -686,10 +770,7 @@ async def main():
             screen.blit(big_font.render(f"DANCE ROUTINE: {dance_name}", True, (255, 220, 100)), (SCREEN_WIDTH // 2 - 200, 268))
             screen.blit(font.render(f"({active_dance[1]})", True, (200, 210, 230)), (SCREEN_WIDTH // 2 - 140, 302))
 
-            if break_winner == "P1":
-                win_sprite_raw = create_squirrel_sprite(True, (255, 140, 0))
-            else:
-                win_sprite_raw = create_viper_sprite(is_boss=False, flash_white=False)
+            win_sprite_raw = create_squirrel_sprite(True, (255, 140, 0)) if break_winner == "P1" else create_viper_sprite(is_boss=False, flash_white=False)
 
             if "HELICOPTER" in dance_name:
                 hover_y = center_y + math.sin(t_progress * 0.15) * 25
@@ -697,7 +778,6 @@ async def main():
                 w_surf = pygame.transform.scale(win_sprite_raw, (72 * scale, 60 * scale))
                 w_rot = pygame.transform.rotate(w_surf, rot_ang)
                 screen.blit(w_rot, w_rot.get_rect(center=(center_x, hover_y)))
-
                 for _ in range(2):
                     pygame.draw.circle(screen, (255, 215, 60), (center_x + random.randint(-40, 40), int(hover_y + random.randint(20, 50))), random.randint(2, 4))
 
@@ -707,7 +787,6 @@ async def main():
                 w_surf = pygame.transform.scale(win_sprite_raw, (72 * scale, 60 * scale))
                 w_rot = pygame.transform.rotate(w_surf, tilt)
                 screen.blit(w_rot, w_rot.get_rect(center=(step_x, center_y)))
-
                 floor_col = random.choice([(255, 50, 120), (0, 240, 255), (255, 215, 0), (50, 255, 120)])
                 pygame.draw.ellipse(screen, floor_col, (step_x - 45, center_y + 40, 90, 16), 3)
 
@@ -733,7 +812,6 @@ async def main():
                 w_rot = pygame.transform.rotate(w_surf, rot_ang)
                 screen.blit(w_rot, w_rot.get_rect(center=(center_x, jump_y)))
 
-            # Loser Animation
             if break_winner == "P1":
                 v_loser = pygame.transform.scale(create_viper_sprite(is_boss=False, flash_white=(break_timer % 10 < 5)), (84 * 1.9, 54 * 1.9))
                 screen.blit(v_loser, v_loser.get_rect(center=(loser_x, loser_y)))
@@ -747,13 +825,13 @@ async def main():
                 star_y = loser_y - 45 + math.sin(t_progress * 0.2) * 15
                 pygame.draw.circle(screen, (255, 230, 80), (int(star_x), int(star_y)), 4)
 
-            next_label = f"ROUND {milestone_count + 1}"
+            next_label = f"WAVE {milestone_count + 1}"
             screen.blit(big_font.render(f"{next_label} IN: {rem_sec}s", True, (255, 230, 100)), (SCREEN_WIDTH // 2 - 110, 535))
 
             if break_timer <= 0:
                 if prev_mode == "CAMPAIGN":
                     game_state = "CAMPAIGN"
-                    current_level = min(max_levels, current_level + 1)
+                    current_level += 1
                     p1_hp = min(p1_max_hp, p1_hp + (80 if bonus_won_by == "P1" else 50))
                     p1_med_kits = min(6, p1_med_kits + 1)
                     p1_decoys = min(6, p1_decoys + 1)
@@ -796,17 +874,20 @@ async def main():
         # PLAYER 1 CONTROLS
         # ======================================================================
         if p1_hp > 0:
+            speed_mult = 1.35 if active_mutator == "HYPER SPEED STORM" else 1.0
+            actual_p1_speed = p1_speed * speed_mult
+
             pad_x = ps_pad_p1.get_axis(0) if ps_pad_p1 and abs(ps_pad_p1.get_axis(0)) > 0.15 else 0.0
             pad_y = ps_pad_p1.get_axis(1) if ps_pad_p1 and abs(ps_pad_p1.get_axis(1)) > 0.15 else 0.0
 
             if keys[pygame.K_a] or pad_x < -0.3:
-                p1_x -= p1_speed
+                p1_x -= actual_p1_speed
             if keys[pygame.K_d] or pad_x > 0.3:
-                p1_x += p1_speed
+                p1_x += actual_p1_speed
             if keys[pygame.K_w] or pad_y < -0.3:
-                p1_y -= p1_speed
+                p1_y -= actual_p1_speed
             if keys[pygame.K_s] or pad_y > 0.3:
-                p1_y += p1_speed
+                p1_y += actual_p1_speed
 
             p1_x = max(10, min(SCREEN_WIDTH - 110, p1_x))
             p1_y = max(55, min(SCREEN_HEIGHT - 90, p1_y))
@@ -832,49 +913,50 @@ async def main():
             current_wpn = WEAPON_TIERS[p1_power_tier]
             is_firing = (mouse_buttons[0] or keys[pygame.K_SPACE] or pad_shoot) and not p1_guard
 
-            # Tiers 3-5: CONTINUOUS LASER RAY BEAM
             if current_wpn["type"] == "laser" and is_firing:
                 p1_laser_active = True
                 p1_laser_end_x = center_p1_x + math.cos(p1_aim_angle) * 900
                 p1_laser_end_y = center_p1_y + math.sin(p1_aim_angle) * 900
 
-                # Laser damage ticks
+                if random.random() < 0.2:
+                    SFX.snd_laser.play()
+
+                if active_mutator == "LOW GRAVITY ZONE":
+                    p1_x -= math.cos(p1_aim_angle) * 1.5
+                    p1_y -= math.sin(p1_aim_angle) * 1.5
+
                 laser_dmg = current_wpn["dmg"] * (3 if game_state == "CAMPAIGN" else 1)
                 p1_dmg_box = pygame.Rect(min(center_p1_x, p1_laser_end_x), min(center_p1_y, p1_laser_end_y),
-                                         abs(p1_laser_end_x - center_p1_x) + 10, abs(p1_laser_end_y - center_p1_y) + 10)
+                                         abs(p1_laser_end_x - center_p1_x) + 12, abs(p1_laser_end_y - center_p1_y) + 12)
 
-                # Laser hitting AI enemies in Campaign
                 if game_state == "CAMPAIGN":
                     for e in campaign_enemies:
                         if not e.is_burrowed and e.rect.colliderect(p1_dmg_box):
                             e.hp -= laser_dmg
                             e.flash_timer = 2
                             total_score += laser_dmg
-                            p1_power_charge += 0.8
+                            p1_power_charge += 1.5
                             if random.random() < 0.3:
                                 hit_sparks.append([e.x + e.width // 2, e.y + e.height // 2, random.uniform(-4, 4), random.uniform(-4, 4), 3, current_wpn["color_outer"], 12])
                             if e.hp <= 0:
                                 campaign_enemies.remove(e)
                                 SFX.snd_explode.play()
 
-                # Laser hitting P2 in Duel
                 elif game_state == "DUEL" and p2_hp > 0 and not p2_is_burrowed:
                     p2_hitbox = pygame.Rect(p2_x + 10, p2_y + 10, 70, 45)
                     if p2_hitbox.colliderect(p1_dmg_box):
                         p2_hp = max(0, p2_hp - laser_dmg)
                         p2_flash_timer = 2
-                        p1_power_charge += 0.8
+                        p1_power_charge += 1.5
                         if random.random() < 0.3:
                             hit_sparks.append([p2_x + 40, p2_y + 25, random.uniform(-4, 4), random.uniform(-4, 4), 3, current_wpn["color_outer"], 12])
 
-                # Upgrade power tier
                 if p1_power_charge >= 100.0 and p1_power_tier < 5:
                     p1_power_charge = 0.0
                     p1_power_tier += 1
                     SFX.snd_win.play()
                     floating_texts.append([f"LASER UPGRADED: {WEAPON_TIERS[p1_power_tier]['name']}!", SCREEN_WIDTH // 2 - 140, 200, WEAPON_TIERS[p1_power_tier]["color_outer"], 45])
 
-            # Tiers 1-2: FAST PLASMA BULLETS
             elif current_wpn["type"] == "bullet":
                 p1_dmg = current_wpn["dmg"] * (3 if game_state == "CAMPAIGN" else 1)
                 if p1_shoot_cd > 0:
@@ -905,9 +987,9 @@ async def main():
                 p1_target_y = p1_decoys_active[0]["y"] + 30
 
             for e in campaign_enemies:
-                shot = e.update(burrow_holes, p1_target_x, p1_target_y, SCREEN_WIDTH, SCREEN_HEIGHT)
-                if shot and p1_hp > 0:
-                    enemy_bullets.append(shot)
+                shots = e.update(burrow_holes, p1_target_x, p1_target_y, SCREEN_WIDTH, SCREEN_HEIGHT)
+                if shots and p1_hp > 0:
+                    enemy_bullets.extend(shots)
 
             for b in enemy_bullets[:]:
                 b["x"] += b["vx"]
@@ -938,7 +1020,7 @@ async def main():
                         SFX.snd_hit.play()
 
                         total_score += b["dmg"]
-                        p1_power_charge += 12.0
+                        p1_power_charge += 24.0
                         if p1_power_charge >= 100.0 and p1_power_tier < 5:
                             p1_power_charge = 0.0
                             p1_power_tier += 1
@@ -1015,22 +1097,25 @@ async def main():
                     p2_pad_shoot = ps_pad_p2 and (ps_pad_p2.get_button(0) or ps_pad_p2.get_button(7))
                     p2_is_firing = (keys[pygame.K_KP0] or keys[pygame.K_RSHIFT] or p2_pad_shoot)
 
-                    # P2 Laser Ray (Tiers 3-5)
+                    # P2 Continuous Laser Ray
                     if p2_current_wpn["type"] == "laser" and p2_is_firing:
                         p2_laser_active = True
                         rad = math.radians(p2_angle)
                         p2_laser_end_x = center_p2_x + math.cos(rad) * 900
                         p2_laser_end_y = center_p2_y + math.sin(rad) * 900
 
+                        if random.random() < 0.2:
+                            SFX.snd_laser.play()
+
                         p2_dmg_box = pygame.Rect(min(center_p2_x, p2_laser_end_x), min(center_p2_y, p2_laser_end_y),
-                                                 abs(p2_laser_end_x - center_p2_x) + 10, abs(p2_laser_end_y - center_p2_y) + 10)
+                                                 abs(p2_laser_end_x - center_p2_x) + 12, abs(p2_laser_end_y - center_p2_y) + 12)
 
                         p1_hitbox = pygame.Rect(p1_x + 15, p1_y + 10, 70, 60)
                         if p1_guard and math.hypot(center_p2_x - center_p1_x, center_p2_y - center_p1_y) < 220:
                             SFX.snd_shield.play()
                         elif p1_hitbox.colliderect(p2_dmg_box) and p1_hp > 0:
                             p1_hp = max(0, p1_hp - p2_current_wpn["dmg"])
-                            p2_power_charge += 0.8
+                            p2_power_charge += 1.5
                             if random.random() < 0.3:
                                 hit_sparks.append([center_p1_x, center_p1_y, random.uniform(-4, 4), random.uniform(-4, 4), 3, (0, 210, 255), 12])
 
@@ -1039,7 +1124,7 @@ async def main():
                             p2_power_tier += 1
                             floating_texts.append([f"P2 LASER TIER {p2_power_tier}!", center_p2_x - 40, center_p2_y - 30, (0, 240, 255), 40])
 
-                    # P2 Bullets (Tiers 1-2)
+                    # P2 Bullets
                     elif p2_current_wpn["type"] == "bullet":
                         if p2_shoot_cd > 0:
                             p2_shoot_cd -= 1
@@ -1076,7 +1161,7 @@ async def main():
                     p1_hp = max(0, p1_hp - b["dmg"])
                     p2_bullets.remove(b)
                     SFX.snd_hit.play()
-                    p2_power_charge += 14.0
+                    p2_power_charge += 24.0
                     if p2_power_charge >= 100.0 and p2_power_tier < 5:
                         p2_power_charge = 0.0
                         p2_power_tier += 1
@@ -1088,7 +1173,7 @@ async def main():
                     p2_flash_timer = 3
                     p1_bullets.remove(b)
                     SFX.snd_hit.play()
-                    p1_power_charge += 14.0
+                    p1_power_charge += 24.0
                     if p1_power_charge >= 100.0 and p1_power_tier < 5:
                         p1_power_charge = 0.0
                         p1_power_tier += 1
@@ -1118,19 +1203,16 @@ async def main():
             pygame.draw.circle(screen, color, (int(b["x"]), int(b["y"])), r)
             pygame.draw.circle(screen, (255, 255, 255), (int(b["x"]), int(b["y"])), max(2, r - 3))
 
-        # ==================== DRAW CYBER LASER BEAMS ====================
+        # Draw Cyber Laser Beams
         if p1_laser_active:
             wpn = WEAPON_TIERS[p1_power_tier]
-            # Outer aura beam
-            pygame.draw.line(screen, wpn["color_outer"], (center_p1_x, center_p1_y), (p1_laser_end_x, p1_laser_end_y), wpn["beam_w"] + 6)
-            # Core high-voltage beam
+            pygame.draw.line(screen, wpn["color_outer"], (center_p1_x, center_p1_y), (p1_laser_end_x, p1_laser_end_y), wpn["beam_w"] + 8)
             pygame.draw.line(screen, wpn["color_core"], (center_p1_x, center_p1_y), (p1_laser_end_x, p1_laser_end_y), wpn["beam_w"])
-            # Spark ring at weapon muzzle
             pygame.draw.circle(screen, wpn["color_core"], (int(center_p1_x), int(center_p1_y)), wpn["beam_w"] + 4)
 
         if p2_laser_active:
             wpn = WEAPON_TIERS[p2_power_tier]
-            pygame.draw.line(screen, wpn["color_outer"], (center_p2_x, center_p2_y), (p2_laser_end_x, p2_laser_end_y), wpn["beam_w"] + 6)
+            pygame.draw.line(screen, wpn["color_outer"], (center_p2_x, center_p2_y), (p2_laser_end_x, p2_laser_end_y), wpn["beam_w"] + 8)
             pygame.draw.line(screen, (255, 255, 255), (center_p2_x, center_p2_y), (p2_laser_end_x, p2_laser_end_y), wpn["beam_w"])
             pygame.draw.circle(screen, wpn["color_core"], (int(center_p2_x), int(center_p2_y)), wpn["beam_w"] + 4)
 
@@ -1186,6 +1268,13 @@ async def main():
             else:
                 screen.blit(font.render("[UNDERGROUND]", True, (200, 100, 255)), (center_p2_x - 45, center_p2_y - 30))
 
+        if active_mutator == "BLACKOUT FOG" and game_state == "CAMPAIGN":
+            dark_overlay.fill((5, 5, 10, 230))
+            pygame.draw.circle(dark_overlay, (0, 0, 0, 0), (int(center_p1_x), int(center_p1_y)), 140)
+            for e in campaign_enemies:
+                pygame.draw.circle(dark_overlay, (0, 0, 0, 0), (int(e.x + e.width // 2), int(e.y + e.height // 2)), 60)
+            screen.blit(dark_overlay, (0, 0))
+
         if not ps_pad_p1:
             pygame.draw.circle(screen, WEAPON_TIERS[p1_power_tier]["color_outer"], mouse_pos, 8, 2)
             pygame.draw.circle(screen, (255, 255, 255), mouse_pos, 2)
@@ -1197,12 +1286,17 @@ async def main():
         p1_title = "P1: S.Q.U.I.R.E.L. (3X POWER)" if game_state == "CAMPAIGN" else "P1: S.Q.U.I.R.E.L."
         screen.blit(font.render(p1_title, True, (255, 180, 80)), (20, 12))
         screen.blit(num_font.render(f"HP: {int(p1_hp)} / {p1_max_hp}", True, p1_col), (20, 30))
-        wpn_desc = f"PWR TIER {p1_power_tier}: {WEAPON_TIERS[p1_power_tier]['name']}"
+        wpn_desc = f"PWR TIER {p1_power_tier}: {WEAPON_TIERS[p1_power_tier]['name']} (Press 'L' to toggle)"
         screen.blit(font.render(wpn_desc, True, WEAPON_TIERS[p1_power_tier]["color_outer"]), (20, 56))
 
         if game_state == "CAMPAIGN":
-            lvl_txt = f"LEVEL {current_level} / {max_levels}"
-            screen.blit(font.render(lvl_txt, True, (255, 230, 100)), (SCREEN_WIDTH // 2 - 60, 12))
+            lvl_col = (255, 60, 90) if current_level > 100 else (255, 230, 100)
+            lvl_txt = f"OVERDRIVE WAVE {current_level}" if current_level > 100 else f"LEVEL {current_level} / 100"
+            screen.blit(font.render(lvl_txt, True, lvl_col), (SCREEN_WIDTH // 2 - 80, 12))
+
+            if active_mutator != "NONE":
+                screen.blit(font.render(f"MUTATOR: {active_mutator}", True, (255, 100, 200)), (SCREEN_WIDTH // 2 - 95, 32))
+
             screen.blit(font.render(f"SCORE: {total_score}", True, (200, 210, 240)), (SCREEN_WIDTH - 150, 12))
 
         elif game_state == "DUEL":
