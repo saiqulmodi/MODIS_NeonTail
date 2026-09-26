@@ -1,3 +1,4 @@
+import array
 import asyncio
 import math
 from pathlib import Path
@@ -5,13 +6,96 @@ import random
 import pygame
 
 pygame.init()
+pygame.mixer.init(frequency=44100, size=-16, channels=2, buffer=512)
+pygame.joystick.init()
+
+joysticks = [pygame.joystick.Joystick(i) for i in range(pygame.joystick.get_count())]
+for joy in joysticks:
+    joy.init()
 
 sprite_dir = Path("assets/sprites")
 sprite_dir.mkdir(parents=True, exist_ok=True)
 
 
+# ==============================================================================
+# PROCEDURAL AUDIO SYNTHESIZER
+# ==============================================================================
+class RetroSoundEngine:
+    @staticmethod
+    def create_tone(freq_start: float, freq_end: float, duration: float, wave_type: str = "square", volume: float = 0.5) -> pygame.mixer.Sound:
+        sample_rate = 44100
+        total_samples = int(sample_rate * duration)
+        raw_samples = array.array("h")
+
+        for i in range(total_samples):
+            t = i / total_samples
+            freq = freq_start + (freq_end - freq_start) * t
+            phase = (2.0 * math.pi * freq * (i / sample_rate)) % (2.0 * math.pi)
+
+            if wave_type == "sine":
+                val = math.sin(phase)
+            elif wave_type == "square":
+                val = 1.0 if math.sin(phase) >= 0 else -1.0
+            elif wave_type == "noise":
+                val = random.uniform(-1.0, 1.0)
+            else:
+                val = 2.0 * (phase / (2.0 * math.pi)) - 1.0
+
+            envelope = (1.0 - t) ** 1.3
+            sample_val = int(val * envelope * 32767 * volume)
+            raw_samples.append(sample_val)
+            raw_samples.append(sample_val)
+
+        return pygame.mixer.Sound(buffer=raw_samples)
+
+    def __init__(self):
+        self.snd_shoot = self.create_tone(880, 240, 0.08, "square", volume=0.25)
+        self.snd_v_shoot = self.create_tone(320, 680, 0.09, "sine", volume=0.3)
+        self.snd_hit = self.create_tone(1100, 350, 0.06, "sine", volume=0.3)
+        self.snd_explode = self.create_tone(160, 40, 0.35, "noise", volume=0.45)
+        self.snd_shield = self.create_tone(400, 800, 0.15, "sine", volume=0.35)
+        self.snd_heal = self.create_tone(523, 1046, 0.22, "sine", volume=0.35)
+        self.snd_decoy = self.create_tone(600, 1200, 0.2, "sine", volume=0.35)
+        self.snd_burrow = self.create_tone(280, 90, 0.28, "square", volume=0.3)
+        self.snd_win = self.create_tone(440, 880, 0.35, "sine", volume=0.4)
+        self.snd_bonus = self.create_tone(500, 1400, 0.25, "sine", volume=0.45)
+
+
+SFX = RetroSoundEngine()
+
+
+# ==============================================================================
+# HILARIOUS TRASH TALK & CLOWN AWARDS
+# ==============================================================================
+SQUIRREL_VICTORY_QUOTES = [
+    "404: Drone aim not found!",
+    "That neon tail wasn't just glowing, it was 200 IQ!",
+    "System reboot required: Drone dignity deleted.",
+    "Out-calculated by a rodent with an acorn launcher!",
+    "Next time, bring a firmware update, not plasma!"
+]
+
+VIPER_VICTORY_QUOTES = [
+    "Thermal lock complete: Rodent grounded for recalibration!",
+    "Your tail glowing at 10,000 Lumens gave you away, Agent.",
+    "Acorns intercepted. Security protocol fully restored.",
+    "Error 200: Squirrel captured. Rerouting acorns to trash.",
+    "Target neutralized. Commencing aerial victory spin!"
+]
+
+CLOWN_AWARDS = [
+    ("THE STORMTROOPER AWARD", "Fired 40 acorns, hit exactly 2."),
+    ("THE UNDERGROUND CHAMELEON", "Spent half the match hiding inside holes!"),
+    ("PANIC SHIELDER", "Held kinetic guard when no bullets were nearby."),
+    ("THE SPEED DEMON", "Ran 500 meters without stopping to aim!"),
+    ("HAIR TRIGGER SPECIALIST", "Trigger finger faster than calculation speed.")
+]
+
+
+# ==============================================================================
+# SPRITE GENERATION
+# ==============================================================================
 def create_squirrel_sprite(tail_flag: bool = False, aura_color=None, alpha: int = 255) -> pygame.Surface:
-    """Agent S.Q.U.I.R.E.L. with a massive bushy neon tail and power aura."""
     surf = pygame.Surface((72, 60), pygame.SRCALPHA)
 
     tail_neon = aura_color if aura_color else (255, 140, 0)
@@ -20,7 +104,6 @@ def create_squirrel_sprite(tail_flag: bool = False, aura_color=None, alpha: int 
     body_fur = (195, 85, 20)
     chest_cream = (245, 205, 150)
 
-    # Bushy Neon Tail
     if tail_flag:
         pygame.draw.circle(surf, (*tail_neon, alpha), (18, 20), 20)
         pygame.draw.circle(surf, (*tail_neon, alpha), (28, 14), 16)
@@ -32,18 +115,13 @@ def create_squirrel_sprite(tail_flag: bool = False, aura_color=None, alpha: int 
         pygame.draw.ellipse(surf, (*tail_core, alpha), (8, 12, 18, 36))
         pygame.draw.ellipse(surf, (*tail_highlight, alpha), (12, 16, 10, 24))
 
-    # Body & Head
     pygame.draw.ellipse(surf, (*body_fur, alpha), (28, 24, 26, 28))
     pygame.draw.ellipse(surf, (*chest_cream, alpha), (36, 28, 14, 18))
     pygame.draw.circle(surf, (*body_fur, alpha), (46, 24), 11)
     pygame.draw.polygon(surf, (*body_fur, alpha), [(42, 14), (46, 6), (50, 14)])
     pygame.draw.polygon(surf, (255, 180, 180, alpha), [(43, 13), (46, 8), (48, 13)])
-
-    # Cyber Visor & Eye
     pygame.draw.ellipse(surf, (0, 240, 255, alpha), (46, 21, 12, 6))
     pygame.draw.circle(surf, (255, 255, 255, alpha), (51, 23), 2)
-
-    # Paws
     pygame.draw.circle(surf, (40, 20, 20, alpha), (56, 26), 2)
     pygame.draw.ellipse(surf, (*body_fur, alpha), (30, 48, 10, 6))
     pygame.draw.ellipse(surf, (*body_fur, alpha), (44, 48, 10, 6))
@@ -51,8 +129,7 @@ def create_squirrel_sprite(tail_flag: bool = False, aura_color=None, alpha: int 
     return surf
 
 
-def create_viper_sprite(is_boss: bool = False, flash_white: bool = False) -> pygame.Surface:
-    """V.I.P.E.R. drone sprite with hit-flash support."""
+def create_viper_sprite(is_boss: bool = False, flash_white: bool = False, alpha: int = 255) -> pygame.Surface:
     surf = pygame.Surface((84, 54), pygame.SRCALPHA)
 
     if flash_white:
@@ -66,32 +143,31 @@ def create_viper_sprite(is_boss: bool = False, flash_white: bool = False) -> pyg
         neon_accent = (0, 210, 255) if not is_boss else (255, 40, 80)
         lens_glow = (200, 255, 255) if not is_boss else (255, 220, 100)
 
-    # Thrusters
-    pygame.draw.circle(surf, dark_metal, (8, 27), 7)
-    pygame.draw.circle(surf, neon_accent, (4, 27), 4)
-    pygame.draw.ellipse(surf, dark_metal, (14, 18, 18, 18))
-    pygame.draw.ellipse(surf, neon_accent, (18, 21, 10, 12), width=2)
-    pygame.draw.ellipse(surf, dark_metal, (28, 16, 22, 22))
-    pygame.draw.ellipse(surf, neon_accent, (32, 19, 14, 16), width=2)
+    pygame.draw.circle(surf, (*dark_metal, alpha), (8, 27), 7)
+    pygame.draw.circle(surf, (*neon_accent, alpha), (4, 27), 4)
+    pygame.draw.ellipse(surf, (*dark_metal, alpha), (14, 18, 18, 18))
+    pygame.draw.ellipse(surf, (*neon_accent, alpha), (18, 21, 10, 12), width=2)
+    pygame.draw.ellipse(surf, (*dark_metal, alpha), (28, 16, 22, 22))
+    pygame.draw.ellipse(surf, (*neon_accent, alpha), (32, 19, 14, 16), width=2)
 
-    # Torso & Head
-    pygame.draw.ellipse(surf, dark_metal, (44, 14, 26, 26))
-    pygame.draw.ellipse(surf, neon_accent, (48, 17, 18, 20), width=2)
+    pygame.draw.ellipse(surf, (*dark_metal, alpha), (44, 14, 26, 26))
+    pygame.draw.ellipse(surf, (*neon_accent, alpha), (48, 17, 18, 20), width=2)
 
     head_points = [(56, 10), (82, 27), (56, 44), (64, 27)]
-    pygame.draw.polygon(surf, light_metal, head_points)
-    pygame.draw.polygon(surf, neon_accent, head_points, width=2)
-    pygame.draw.polygon(surf, lens_glow, [(68, 24), (79, 27), (68, 30)])
+    pygame.draw.polygon(surf, (*light_metal, alpha), head_points)
+    pygame.draw.polygon(surf, (*neon_accent, alpha), head_points, width=2)
+    pygame.draw.polygon(surf, (*lens_glow, alpha), [(68, 24), (79, 27), (68, 30)])
 
-    return pygame.transform.flip(surf, True, False)
+    return surf
 
 
+# ==============================================================================
+# SINGLE-PLAYER AI ENEMY CLASS
+# ==============================================================================
 class ViperEnemy:
-    PATTERNS = ["SINE_WAVE", "ZIG_ZAG", "HUNT_TRACK", "LURK_SWOOP"]
-
-    def __init__(self, level: int, is_boss: bool = False, offset_x: int = 0):
+    def __init__(self, level: int, is_boss: bool = False):
         self.is_boss = is_boss
-        self.scale = 2.8 if is_boss else 2.0
+        self.scale = 2.8 if is_boss else 1.9
         self.width = int(84 * self.scale)
         self.height = int(54 * self.scale)
 
@@ -102,85 +178,101 @@ class ViperEnemy:
             create_viper_sprite(is_boss=is_boss, flash_white=True), (self.width, self.height)
         )
 
-        self.base_anchor_x = 590.0 + offset_x
-        self.x = self.base_anchor_x
-        self.y = random.randint(80, 420)
+        self.x = random.uniform(420, 720)
+        self.y = random.uniform(80, 500)
 
-        base_hp = 250 if is_boss else 60
+        base_hp = 250 if is_boss else 70
         self.max_hp = base_hp + (level * 18 if is_boss else level * 6)
         self.hp = self.max_hp
 
-        self.level = level
-        self.speed_stat = 2.4 + min(4.0, level * 0.05)
-        self.speed_y = self.speed_stat * random.choice([1, -1])
+        self.speed_stat = 2.5 + min(0.6, level * 0.01)
+        self.angle = 180.0
+        self.is_burrowed = False
+        self.burrow_timer = 0
+        self.burrow_cooldown = random.randint(180, 360)
 
-        self.current_pattern = random.choice(self.PATTERNS)
-        self.pattern_timer = random.randint(120, 240)
-        self.sine_angle = random.uniform(0, math.pi * 2)
-
-        self.cooldown_max = max(18, (36 if is_boss else 52) - int(level * 0.35))
+        self.cooldown_max = max(22, (42 if is_boss else 54) - int(level * 0.35))
         self.shoot_timer = random.randint(0, self.cooldown_max)
         self.flash_timer = 0
 
-    def update(self, screen_height: int, screen_width: int, player_y: float):
-        self.pattern_timer -= 1
-        if self.pattern_timer <= 0:
-            self.current_pattern = random.choice(self.PATTERNS)
-            self.pattern_timer = random.randint(120, 220)
-            self.speed_y = self.speed_stat * random.choice([1, -1])
-
-        if self.current_pattern == "SINE_WAVE":
-            self.sine_angle += 0.05
-            self.y += math.sin(self.sine_angle) * (self.speed_stat * 1.6)
-            self.x = self.base_anchor_x + math.cos(self.sine_angle * 0.5) * 50
-
-        elif self.current_pattern == "ZIG_ZAG":
-            self.y += self.speed_y * 1.3
-            if self.y <= 60 or self.y >= screen_height - self.height - 30:
-                self.speed_y *= -1
-            self.x += (self.base_anchor_x - self.x) * 0.05
-
-        elif self.current_pattern == "HUNT_TRACK":
-            target_diff = (player_y + 10) - self.y
-            if abs(target_diff) > 8:
-                self.y += math.copysign(min(abs(target_diff), self.speed_stat * 1.1), target_diff)
-            forward_x = self.base_anchor_x - 110
-            self.x += (forward_x - self.x) * 0.04
-
-        elif self.current_pattern == "LURK_SWOOP":
-            self.sine_angle += 0.07
-            self.y += math.cos(self.sine_angle) * (self.speed_stat * 1.2)
-            self.x = (self.base_anchor_x - 70) + math.sin(self.sine_angle) * 120
-
-        self.y = max(55, min(screen_height - self.height - 20, self.y))
-        self.x = max(380, min(screen_width - self.width - 15, self.x))
-
+    def update(self, holes, target_x, target_y, screen_w, screen_h):
         if self.flash_timer > 0:
             self.flash_timer -= 1
 
-        self.shoot_timer += 1
-        should_shoot = False
-        if self.shoot_timer >= self.cooldown_max:
-            self.shoot_timer = 0
-            should_shoot = True
+        if self.is_burrowed:
+            self.burrow_timer -= 1
+            if self.burrow_timer <= 0:
+                dest = random.choice(holes)
+                self.x = dest[0] - self.width // 2
+                self.y = dest[1] - self.height // 2
+                self.is_burrowed = False
+                self.burrow_cooldown = random.randint(240, 420)
+                SFX.snd_burrow.play()
+            return None
 
-        return should_shoot
+        if self.burrow_cooldown > 0:
+            self.burrow_cooldown -= 1
+        elif len(holes) > 0 and (self.hp < self.max_hp * 0.5 or random.random() < 0.005):
+            nearest = min(holes, key=lambda h: math.hypot(h[0] - (self.x + self.width // 2), h[1] - (self.y + self.height // 2)))
+            dist = math.hypot(nearest[0] - (self.x + self.width // 2), nearest[1] - (self.y + self.height // 2))
+            if dist < 35:
+                self.is_burrowed = True
+                self.burrow_timer = 120
+                SFX.snd_burrow.play()
+                return None
+            else:
+                angle = math.atan2(nearest[1] - (self.y + self.height // 2), nearest[0] - (self.x + self.width // 2))
+                self.x += math.cos(angle) * self.speed_stat
+                self.y += math.sin(angle) * self.speed_stat
+                self.angle = math.degrees(angle)
+
+        if not self.is_burrowed:
+            center_x = self.x + self.width // 2
+            center_y = self.y + self.height // 2
+            dx = target_x - center_x
+            dy = target_y - center_y
+            dist = math.hypot(dx, dy)
+            target_angle = math.atan2(dy, dx)
+            self.angle = math.degrees(target_angle)
+
+            if dist > 250:
+                self.x += math.cos(target_angle) * (self.speed_stat * 0.85)
+                self.y += math.sin(target_angle) * (self.speed_stat * 0.85)
+            elif dist < 160:
+                self.x -= math.cos(target_angle) * (self.speed_stat * 0.75)
+                self.y -= math.sin(target_angle) * (self.speed_stat * 0.75)
+            else:
+                self.x += -math.sin(target_angle) * (self.speed_stat * 0.8)
+                self.y += math.cos(target_angle) * (self.speed_stat * 0.8)
+
+            self.x = max(20, min(screen_w - self.width - 20, self.x))
+            self.y = max(60, min(screen_h - self.height - 20, self.y))
+
+        self.shoot_timer += 1
+        if self.shoot_timer >= self.cooldown_max and not self.is_burrowed:
+            self.shoot_timer = 0
+            b_angle = math.atan2(target_y - (self.y + self.height // 2), target_x - (self.x + self.width // 2))
+            return {
+                "x": self.x + self.width // 2,
+                "y": self.y + self.height // 2,
+                "vx": math.cos(b_angle) * 7.0,
+                "vy": math.sin(b_angle) * 7.0,
+                "color": (255, 60, 90) if self.is_boss else (0, 220, 255),
+                "dmg": 18 if self.is_boss else 10,
+            }
+        return None
 
     @property
     def rect(self):
         return pygame.Rect(self.x + 10, self.y + 10, self.width - 20, self.height - 20)
 
-    @property
-    def sprite(self):
-        return self.flash_sprite if self.flash_timer > 0 else self.normal_sprite
-
-
-def draw_bar(surface, x, y, width, height, current, maximum, bar_color):
-    fill = int((max(0, current) / maximum) * width)
-    pygame.draw.rect(surface, (30, 32, 45), (x, y, width, height), border_radius=4)
-    if fill > 0:
-        pygame.draw.rect(surface, bar_color, (x, y, fill, height), border_radius=4)
-    pygame.draw.rect(surface, (180, 185, 205), (x, y, width, height), 2, border_radius=4)
+    def draw(self, surface):
+        if self.is_burrowed:
+            return
+        base_surf = self.flash_sprite if self.flash_timer > 0 else self.normal_sprite
+        rotated = pygame.transform.rotate(base_surf, -self.angle)
+        rot_rect = rotated.get_rect(center=(self.x + self.width // 2, self.y + self.height // 2))
+        surface.blit(rotated, rot_rect.topleft)
 
 
 WEAPON_TIERS = {
@@ -192,205 +284,289 @@ WEAPON_TIERS = {
 }
 
 
+# ==============================================================================
+# MAIN ASYNC LOOP
+# ==============================================================================
 async def main():
+    global joysticks
     SCREEN_WIDTH, SCREEN_HEIGHT = 800, 600
     screen = pygame.display.set_mode((SCREEN_WIDTH, SCREEN_HEIGHT))
-    pygame.display.set_caption("MODIS NeonTail - 100 Levels")
+    pygame.display.set_caption("MODIS NeonTail - Cyber Combat")
     clock = pygame.time.Clock()
 
-    font = pygame.font.SysFont("consolas", 16, bold=True)
-    big_font = pygame.font.SysFont("consolas", 34, bold=True)
-    title_font = pygame.font.SysFont("consolas", 40, bold=True)
+    font = pygame.font.SysFont("consolas", 14, bold=True)
+    num_font = pygame.font.SysFont("consolas", 22, bold=True)
+    big_font = pygame.font.SysFont("consolas", 28, bold=True)
+    title_font = pygame.font.SysFont("consolas", 36, bold=True)
 
     scale = 2
-    v_preview = pygame.transform.scale(create_viper_sprite(False), (84 * 1.4, 54 * 1.4))
+    game_state = "MODE_SELECT"  # 'MODE_SELECT', 'CAMPAIGN', 'DUEL', 'TIMEOUT_BREAK'
+    prev_mode = "CAMPAIGN"
 
-    # Game States: 'HOW_TO_PLAY', 'PLAYING', 'WIN_CELEBRATION'
-    game_state = "HOW_TO_PLAY"
+    burrow_holes = [(200, 140), (620, 150), (220, 480), (600, 470), (410, 310)]
+    active_decoys = []
+
+    # 5-Second Break Variables
+    timeout_frames = 300
+    timeout_timer = timeout_frames
+    break_winner = "P1"
+    break_quote = ""
+    break_award = ("", "")
+    fireworks = []
+    bonus_won_by = None  # None, 'P1', or 'P2'
+
+    # Player 1 State
+    p1_x, p1_y = 120.0, 300.0
+    p1_speed = 5.4
+    p1_max_hp = 300
+    p1_hp = p1_max_hp
+    p1_guard = False
+    p1_guard_energy = 100.0
+    p1_med_kits = 6
+    p1_decoys = 6
+    p1_shoot_cd = 0
+    p1_power_tier = 1
+    p1_power_charge = 0.0
+
+    # Campaign progression
     current_level = 1
     max_levels = 100
-
-    # Physics & stats
-    player_x, player_y = 70.0, 360.0
-    vel_x, vel_y = 0.0, 0.0
-    gravity = 0.55
-    floor_y = 440.0
-    is_grounded = True
-    player_max_hp = 100
-    player_hp = player_max_hp
-
-    # Special Squirrel Moves
-    vanish_timer = 0
-    vanish_cooldown = 0
-    dash_timer = 0
-    dash_cooldown = 0
-    dash_dir = 1
-    ghost_trails = []
-
-    # Weapon & Progress
-    power_tier = 1
-    power_charge = 0.0
-    max_power_charge = 100.0
-
-    shoot_cooldown = 0
-    tail_anim_timer = 0
     total_score = 0
-    combo_hits = 0
-    combo_timer = 0
-    level_banner_timer = 90
 
-    # 5-Second Celebration System (300 frames @ 60 FPS)
-    celebration_frames = 300
-    celebration_timer = celebration_frames
-    fireworks = []
+    # Player 2 Duel State
+    p1_wins = 0
+    p2_wins = 0
+    p2_x, p2_y = 650.0, 300.0
+    p2_speed = 4.4
+    p2_max_hp = 120
+    p2_hp = p2_max_hp
+    p2_angle = 180.0
+    p2_shoot_cd = 0
+    p2_flash_timer = 0
+    p2_is_burrowed = False
+    p2_burrow_timer = 0
+    p2_burrow_cd = 0
+    p2_decoys = 3
+    p2_power_tier = 1
+    p2_power_charge = 0.0
 
-    def spawn_wave(lvl):
+    def spawn_campaign_wave(lvl):
         enemies = []
-        is_boss_wave = (lvl % 10 == 0)
-        if is_boss_wave:
-            enemies.append(ViperEnemy(lvl, is_boss=True, offset_x=0))
+        if lvl % 10 == 0:
+            enemies.append(ViperEnemy(lvl, is_boss=True))
         else:
-            num_drones = min(3, 1 + (lvl // 15))
-            for i in range(num_drones):
-                enemies.append(ViperEnemy(lvl, is_boss=False, offset_x=i * 55))
+            num = min(3, 1 + (lvl // 15))
+            for _ in range(num):
+                enemies.append(ViperEnemy(lvl, is_boss=False))
         return enemies
 
-    enemies = spawn_wave(current_level)
-    player_bullets = []
+    campaign_enemies = spawn_campaign_wave(current_level)
+    p1_bullets = []
+    p2_bullets = []
     enemy_bullets = []
-    energy_pickups = []
-
     hit_sparks = []
     floating_texts = []
 
+    def trigger_5s_break(winner: str, origin_mode: str):
+        nonlocal game_state, timeout_timer, break_winner, break_quote, break_award, bonus_won_by, prev_mode
+        game_state = "TIMEOUT_BREAK"
+        prev_mode = origin_mode
+        timeout_timer = timeout_frames
+        break_winner = winner
+        bonus_won_by = None
+        fireworks.clear()
+
+        if winner == "P1":
+            break_quote = random.choice(SQUIRREL_VICTORY_QUOTES)
+        else:
+            break_quote = random.choice(VIPER_VICTORY_QUOTES)
+        break_award = random.choice(CLOWN_AWARDS)
+        SFX.snd_win.play()
+
     running = True
     while running:
+        mouse_pos = pygame.mouse.get_pos()
+        ps_pad_p1 = joysticks[0] if len(joysticks) > 0 else None
+        ps_pad_p2 = joysticks[1] if len(joysticks) > 1 else None
+
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
                 running = False
-            if event.type == pygame.KEYDOWN:
-                if game_state == "HOW_TO_PLAY" and event.key in (pygame.K_RETURN, pygame.K_SPACE):
-                    game_state = "PLAYING"
-                # Quick restart from celebration
-                if game_state == "WIN_CELEBRATION" and event.key in (pygame.K_RETURN, pygame.K_r):
-                    game_state = "HOW_TO_PLAY"
-                    current_level = 1
+
+            if event.type == pygame.JOYDEVICEADDED:
+                joysticks.clear()
+                for i in range(pygame.joystick.get_count()):
+                    j = pygame.joystick.Joystick(i)
+                    j.init()
+                    joysticks.append(j)
+
+            # MODE SELECT LOGIC
+            if game_state == "MODE_SELECT":
+                if (event.type == pygame.KEYDOWN and event.key in (pygame.K_1, pygame.K_KP1)) or \
+                   (event.type == pygame.JOYBUTTONDOWN and event.button == 0):
+                    game_state = "CAMPAIGN"
+                    p1_max_hp = 300
+                    p1_hp = p1_max_hp
+                    p1_med_kits = 6
+                    p1_decoys = 6
+                    p1_power_tier = 1
+                    p1_power_charge = 0.0
+                    SFX.snd_win.play()
+
+                elif (event.type == pygame.KEYDOWN and event.key in (pygame.K_2, pygame.K_KP2)) or \
+                     (event.type == pygame.JOYBUTTONDOWN and event.button == 1):
+                    game_state = "DUEL"
+                    p1_max_hp = 120
+                    p1_hp = p1_max_hp
+                    p1_med_kits = 2
+                    p1_decoys = 3
+                    p1_power_tier = 1
+                    p1_power_charge = 0.0
+                    p2_max_hp = 120
+                    p2_hp = p2_max_hp
+                    p2_decoys = 3
+                    p2_power_tier = 1
+                    p2_power_charge = 0.0
+                    SFX.snd_win.play()
+
+            # COGNITIVE SPEED-REFLEX CHALLENGE (DURING 5-SEC BREAK)
+            if game_state == "TIMEOUT_BREAK" and bonus_won_by is None:
+                if (event.type == pygame.KEYDOWN and event.key == pygame.K_SPACE) or \
+                   (event.type == pygame.JOYBUTTONDOWN and ps_pad_p1 and event.joy == 0 and event.button == 0):
+                    bonus_won_by = "P1"
+                    SFX.snd_bonus.play()
+                elif (event.type == pygame.KEYDOWN and event.key in (pygame.K_KP0, pygame.K_RSHIFT)) or \
+                     (event.type == pygame.JOYBUTTONDOWN and ps_pad_p2 and event.joy == 1 and event.button == 0):
+                    bonus_won_by = "P2"
+                    SFX.snd_bonus.play()
+
+            # P1 Heal
+            if game_state in ("CAMPAIGN", "DUEL") and p1_med_kits > 0 and p1_hp < p1_max_hp:
+                if (event.type == pygame.KEYDOWN and event.key in (pygame.K_q, pygame.K_m)) or \
+                   (event.type == pygame.JOYBUTTONDOWN and ps_pad_p1 and event.joy == 0 and event.button in (1, 2, 3)):
+                    heal_amt = 60 if game_state == "CAMPAIGN" else 35
+                    p1_hp = min(p1_max_hp, p1_hp + heal_amt)
+                    p1_med_kits -= 1
+                    SFX.snd_heal.play()
+                    floating_texts.append([f"+{heal_amt} HP", p1_x + 10, p1_y - 20, (100, 255, 120), 35])
+
+            # P1 Deploy Virtual Image Decoy
+            if game_state in ("CAMPAIGN", "DUEL") and p1_decoys > 0:
+                if (event.type == pygame.KEYDOWN and event.key == pygame.K_f) or \
+                   (event.type == pygame.JOYBUTTONDOWN and ps_pad_p1 and event.joy == 0 and event.button == 3):
+                    p1_decoys -= 1
+                    active_decoys.append({"x": p1_x, "y": p1_y, "life": 240, "type": "p1"})
+                    SFX.snd_decoy.play()
+                    floating_texts.append(["HOLOGRAPHIC DECOY DEPLOYED!", p1_x, p1_y - 25, (0, 240, 255), 35])
+
+            # P2 Deploy Virtual Image Decoy
+            if game_state == "DUEL" and p2_decoys > 0:
+                if (event.type == pygame.KEYDOWN and event.key in (pygame.K_KP7, pygame.K_LEFTBRACKET)) or \
+                   (event.type == pygame.JOYBUTTONDOWN and ps_pad_p2 and event.joy == 1 and event.button == 4):
+                    p2_decoys -= 1
+                    active_decoys.append({"x": p2_x, "y": p2_y, "life": 240, "type": "p2"})
+                    SFX.snd_decoy.play()
+                    floating_texts.append(["VIPER HOLOGRAM DEPLOYED!", p2_x, p2_y - 25, (200, 100, 255), 35])
+
+            # P2 Burrow in Duel
+            if game_state == "DUEL" and not p2_is_burrowed and p2_burrow_cd == 0:
+                if (event.type == pygame.KEYDOWN and event.key in (pygame.K_KP_ENTER, pygame.K_SLASH)) or \
+                   (event.type == pygame.JOYBUTTONDOWN and ps_pad_p2 and event.joy == 1 and event.button == 5):
+                    nearest = min(burrow_holes, key=lambda h: math.hypot(h[0] - (p2_x + 40), h[1] - (p2_y + 25)))
+                    if math.hypot(nearest[0] - (p2_x + 40), nearest[1] - (p2_y + 25)) < 110:
+                        p2_is_burrowed = True
+                        p2_burrow_timer = 90
+                        p2_burrow_cd = 240
+                        SFX.snd_burrow.play()
+
+            if event.type == pygame.KEYDOWN and event.key == pygame.K_ESCAPE:
+                game_state = "MODE_SELECT"
 
         screen.fill((10, 12, 22))
 
-        # Background grid
+        # Grid lines
         for gx in range(0, SCREEN_WIDTH, 50):
             pygame.draw.line(screen, (20, 24, 40), (gx, 0), (gx, SCREEN_HEIGHT))
         for gy in range(0, SCREEN_HEIGHT, 50):
             pygame.draw.line(screen, (20, 24, 40), (0, gy), (SCREEN_WIDTH, gy))
 
-        current_weapon = WEAPON_TIERS[power_tier]
-
-        s_normal = pygame.transform.scale(
-            create_squirrel_sprite(False, current_weapon["color_outer"], alpha=255), (72 * scale, 60 * scale)
-        )
-        s_alert = pygame.transform.scale(
-            create_squirrel_sprite(True, current_weapon["color_outer"], alpha=255), (72 * scale, 60 * scale)
-        )
-        s_ghost = pygame.transform.scale(
-            create_squirrel_sprite(True, (0, 240, 255), alpha=70), (72 * scale, 60 * scale)
-        )
-
-        # ==================== STATE 1: HOW TO PLAY & POWER SURVIVAL BRIEFING ====================
-        if game_state == "HOW_TO_PLAY":
+        # ======================================================================
+        # STATE 1: MODE SELECT SCREEN
+        # ======================================================================
+        if game_state == "MODE_SELECT":
             t_surf = title_font.render("MODIS NEON TAIL", True, (255, 140, 0))
-            sub_surf = font.render("MISSION BRIEFING: SURVIVAL & CONTROL SYSTEMS", True, (0, 220, 255))
-            screen.blit(t_surf, (SCREEN_WIDTH // 2 - t_surf.get_width() // 2, 20))
-            screen.blit(sub_surf, (SCREEN_WIDTH // 2 - sub_surf.get_width() // 2, 65))
+            sub_surf = font.render("CHOOSE GAMEPLAY MODE", True, (0, 220, 255))
+            screen.blit(t_surf, (SCREEN_WIDTH // 2 - t_surf.get_width() // 2, 70))
+            screen.blit(sub_surf, (SCREEN_WIDTH // 2 - sub_surf.get_width() // 2, 115))
 
-            # Controls Box
-            box_left = pygame.Rect(40, 95, 350, 395)
-            pygame.draw.rect(screen, (18, 22, 38), box_left, border_radius=10)
-            pygame.draw.rect(screen, (0, 180, 220), box_left, 2, border_radius=10)
+            card1 = pygame.Rect(60, 160, 325, 300)
+            pygame.draw.rect(screen, (18, 22, 38), card1, border_radius=12)
+            pygame.draw.rect(screen, (255, 140, 0), card1, 2, border_radius=12)
 
-            title_ctrl = font.render("=== ALL CONTROL KEYS ===", True, (255, 215, 60))
-            screen.blit(title_ctrl, (60, 108))
-
-            controls_list = [
-                ("[ A / D or L/R ]", "Sprint Left / Right"),
-                ("[ W / UP / C ]", "Jet Jump & High Leap"),
-                ("[ S / DOWN ]", "Tail Helicopter Glide (in air)"),
-                ("[ SHIFT / X ]", "CYBER CLOAK (Vanish/Invulnerable)"),
-                ("[ V Key ]", "WARP SWOOP (Instant forward dash)"),
-                ("[ SPACEBAR ]", "Fire Evolving Neon Acorns"),
-                ("[ 'N' Key ]", "Skip level (Testing shortcut)"),
-                ("[ 'R' Key ]", "Instant Mission Retry"),
+            screen.blit(big_font.render("1P CAMPAIGN", True, (255, 180, 80)), (80, 180))
+            lines1 = [
+                "Agent S.Q.U.I.R.E.L. vs AI Swarm",
+                "[PLAYER GETS 3X EVERYTHING]:",
+                "- 3x Max HP (300 Health)",
+                "- 3x Nanotech Med-Kits (6 Kits)",
+                "- 3x Virtual Decoys (6 Holograms)",
+                "- 3x High-Powered Acorn Damage",
+                "",
+                ">> PRESS '1' OR CROSS (X) <<",
             ]
-            y_pos = 138
-            for k, d in controls_list:
-                screen.blit(font.render(k, True, (255, 230, 100)), (55, y_pos))
-                screen.blit(font.render(d, True, (215, 220, 235)), (55, y_pos + 17))
-                y_pos += 36
+            y_c1 = 220
+            for ln in lines1:
+                col = (100, 255, 150) if ">>" in ln else ((255, 220, 100) if "3X" in ln else (210, 220, 235))
+                screen.blit(font.render(ln, True, col), (75, y_c1))
+                y_c1 += 24
 
-            # How Power Helps You Survive Box
-            box_right = pygame.Rect(410, 95, 350, 395)
-            pygame.draw.rect(screen, (18, 22, 38), box_right, border_radius=10)
-            pygame.draw.rect(screen, (255, 140, 0), box_right, 2, border_radius=10)
+            card2 = pygame.Rect(415, 160, 325, 300)
+            pygame.draw.rect(screen, (18, 22, 38), card2, border_radius=12)
+            pygame.draw.rect(screen, (0, 210, 255), card2, 2, border_radius=12)
 
-            title_pwr = font.render("=== HOW POWER SAVES YOU ===", True, (255, 140, 0))
-            screen.blit(title_pwr, (430, 108))
-
-            power_perks = [
-                ("[ 2X TRAVEL SPEED ]", "Bullets cross screen instantly so"),
-                ("", "drones have zero reaction time."),
-                ("[ EXPANDED HITBOX ]", "Larger neon shells ensure direct hits"),
-                ("", "even against erratic zig-zagging foes."),
-                ("[ RAPID COOLDOWN ]", "Power cuts firing delays in half,"),
-                ("", "allowing lethal continuous salvos."),
-                ("[ BOSS HEALTH SHRED ]", "Tiers 4-5 deal 4x base damage to"),
-                ("", "destroy crimson Overlords quickly."),
-                ("[ STAGE REPAIR ]", "Clearing each level restores +30 HP."),
+            screen.blit(big_font.render("2P DUEL (PVP)", True, (0, 220, 255)), (440, 180))
+            lines2 = [
+                "P1 (Squirrel) vs P2 (Viper)",
+                "[EQUAL BALANCED POWER]:",
+                "- Equal 120 HP for both players",
+                "- 3 Virtual Image Decoys each",
+                "- Incremental Power on hits",
+                "- 5-Second Slapstick & Quiz Breaks",
+                "- P2 Burrow & Teleport Ambush",
+                "",
+                ">> PRESS '2' OR CIRCLE (O) <<",
             ]
-            y_pos_r = 138
-            for label, desc in power_perks:
-                if label:
-                    screen.blit(font.render(label, True, (0, 255, 180)), (425, y_pos_r))
-                if desc:
-                    screen.blit(font.render(desc, True, (215, 220, 235)), (425, y_pos_r + (17 if label else 0)))
-                y_pos_r += 32 if label else 18
+            y_c2 = 220
+            for ln in lines2:
+                col = (100, 255, 150) if ">>" in ln else ((0, 240, 255) if "EQUAL" in ln else (210, 220, 235))
+                screen.blit(font.render(ln, True, col), (430, y_c2))
+                y_c2 += 24
 
-            # Blinking Start Bar
-            tail_anim_timer += 1
-            if (tail_anim_timer // 25) % 2 == 0:
-                p_surf = big_font.render(">> PRESS ENTER OR SPACE TO COMMENCE <<", True, (100, 255, 150))
-                screen.blit(p_surf, (SCREEN_WIDTH // 2 - p_surf.get_width() // 2, 520))
+            pad_msg = "PlayStation Gamepad Connected" if ps_pad_p1 else "Keyboard Connected"
+            screen.blit(font.render(f"Controller: {pad_msg} | Esc to Switch Modes", True, (160, 170, 190)), (SCREEN_WIDTH // 2 - 190, 505))
 
             pygame.display.flip()
             clock.tick(60)
             await asyncio.sleep(0)
             continue
 
-        # ==================== STATE 3: 5-SECOND GRAND WIN CELEBRATION ====================
-        if game_state == "WIN_CELEBRATION":
-            celebration_timer -= 1
-            remaining_seconds = max(0, int(math.ceil(celebration_timer / 60.0)))
+        # ======================================================================
+        # STATE 2: 5-SECOND TIMEOUT BREAK (COGNITIVE + SLAPSTICK + TRASH TALK)
+        # ======================================================================
+        if game_state == "TIMEOUT_BREAK":
+            timeout_timer -= 1
+            rem_sec = max(0, int(math.ceil(timeout_timer / 60.0)))
 
-            # Spawn colorful fireworks
-            if celebration_timer % 6 == 0:
-                fw_x = random.randint(100, SCREEN_WIDTH - 100)
-                fw_y = random.randint(80, 340)
-                base_color = random.choice([
-                    (255, 215, 0), (0, 240, 255), (255, 50, 120), (50, 255, 120), (255, 140, 0)
-                ])
-                for _ in range(25):
-                    speed = random.uniform(2.5, 7.5)
-                    angle = random.uniform(0, math.pi * 2)
-                    fireworks.append({
-                        "x": fw_x,
-                        "y": fw_y,
-                        "vx": math.cos(angle) * speed,
-                        "vy": math.sin(angle) * speed,
-                        "color": base_color,
-                        "radius": random.randint(2, 5),
-                        "life": random.randint(25, 45),
-                    })
+            # Spawn Confetti & Fireworks
+            if timeout_timer % 6 == 0:
+                fx = random.randint(80, SCREEN_WIDTH - 80)
+                fy = random.randint(80, 260)
+                col = random.choice([(255, 215, 0), (0, 240, 255), (255, 50, 120), (50, 255, 120)])
+                for _ in range(16):
+                    ang = random.uniform(0, math.pi * 2)
+                    sp = random.uniform(2.0, 6.0)
+                    fireworks.append({"x": fx, "y": fy, "vx": math.cos(ang) * sp, "vy": math.sin(ang) * sp, "col": col, "life": 28})
 
-            # Update & draw fireworks
             for fw in fireworks[:]:
                 fw["x"] += fw["vx"]
                 fw["y"] += fw["vy"]
@@ -398,397 +574,453 @@ async def main():
                 if fw["life"] <= 0:
                     fireworks.remove(fw)
                 else:
-                    pygame.draw.circle(screen, fw["color"], (int(fw["x"]), int(fw["y"])), fw["radius"])
+                    pygame.draw.circle(screen, fw["col"], (int(fw["x"]), int(fw["y"])), 3)
 
-            # Victory Banners
-            w_surf = title_font.render("CONGRATULATIONS, AGENT!", True, (255, 215, 60))
-            sub_w = big_font.render("ALL 100 LEVELS CONQUERED", True, (0, 255, 200))
-            score_w = font.render(f"FINAL CYBER SCORE: {total_score}", True, (255, 255, 255))
-            time_w = big_font.render(f"Returning to Base in: {remaining_seconds}s", True, (255, 90, 140))
+            # Round Outcome Banner
+            win_title = "AGENT S.Q.U.I.R.E.L. TAKES ROUND!" if break_winner == "P1" else "V.I.P.E.R. DOMINATES ROUND!"
+            win_color = (255, 180, 80) if break_winner == "P1" else (0, 220, 255)
+            w_surf = title_font.render(win_title, True, win_color)
+            screen.blit(w_surf, (SCREEN_WIDTH // 2 - w_surf.get_width() // 2, 40))
 
-            screen.blit(w_surf, (SCREEN_WIDTH // 2 - w_surf.get_width() // 2, 130))
-            screen.blit(sub_w, (SCREEN_WIDTH // 2 - sub_w.get_width() // 2, 190))
-            screen.blit(score_w, (SCREEN_WIDTH // 2 - score_w.get_width() // 2, 260))
-            screen.blit(time_w, (SCREEN_WIDTH // 2 - time_w.get_width() // 2, 320))
+            # Trash-Talk Speech Bubble
+            speech_box = pygame.Rect(120, 100, 560, 52)
+            pygame.draw.rect(screen, (25, 30, 50), speech_box, border_radius=10)
+            pygame.draw.rect(screen, win_color, speech_box, 2, border_radius=10)
+            q_surf = font.render(f'"{break_quote}"', True, (255, 230, 100))
+            screen.blit(q_surf, (SCREEN_WIDTH // 2 - q_surf.get_width() // 2, 118))
 
-            # Celebratory Squirrel Doing Air Flips
-            tail_anim_timer += 1
-            flip_s = s_alert if (tail_anim_timer // 10) % 2 == 0 else s_normal
-            screen.blit(flip_s, (SCREEN_WIDTH // 2 - 72, 410))
+            # Clown Award Box
+            award_box = pygame.Rect(160, 165, 480, 56)
+            pygame.draw.rect(screen, (35, 20, 35), award_box, border_radius=8)
+            pygame.draw.rect(screen, (255, 100, 200), award_box, 2, border_radius=8)
+            screen.blit(font.render(f"[ {break_award[0]} ]", True, (255, 100, 200)), (180, 173))
+            screen.blit(font.render(break_award[1], True, (220, 225, 240)), (180, 195))
 
-            if celebration_timer <= 0:
-                game_state = "HOW_TO_PLAY"
-                current_level = 1
-                player_hp = player_max_hp
-                celebration_timer = celebration_frames
-                fireworks.clear()
+            # COGNITIVE SPEED-REFLEX CHALLENGE BOX
+            quiz_box = pygame.Rect(100, 235, 600, 95)
+            pygame.draw.rect(screen, (15, 35, 30) if bonus_won_by else (18, 24, 45), quiz_box, border_radius=12)
+            pygame.draw.rect(screen, (0, 255, 180), quiz_box, 2, border_radius=12)
+
+            ch_title = font.render(">> COGNITIVE SPEED-REFLEX CHALLENGE <<", True, (0, 255, 180))
+            screen.blit(ch_title, (SCREEN_WIDTH // 2 - ch_title.get_width() // 2, 246))
+
+            if bonus_won_by is None:
+                prompt_txt = "FIRST TO HIT [SPACE] (P1) OR [NUM 0] (P2) GETS +30 HP BONUS!"
+                screen.blit(font.render(prompt_txt, True, (255, 255, 255)), (SCREEN_WIDTH // 2 - 245, 275))
+                screen.blit(font.render("(OR CROSS BUTTON ON PS CONTROLLER)", True, (255, 215, 60)), (SCREEN_WIDTH // 2 - 145, 298))
+            else:
+                reward_winner = "PLAYER 1 (S.Q.U.I.R.E.L.)" if bonus_won_by == "P1" else "PLAYER 2 (V.I.P.E.R.)"
+                rew_txt = f"LIGHTNING FAST! {reward_winner} CLAIMED +30 HP BONUS!"
+                screen.blit(font.render(rew_txt, True, (100, 255, 140)), (SCREEN_WIDTH // 2 - 235, 285))
+
+            # Slapstick Animated Sprites (Winner Flips, Loser Smokes)
+            anim_angle = (timeout_timer * 12) % 360
+            if break_winner == "P1":
+                # P1 Spinning in celebration
+                s_raw = pygame.transform.scale(create_squirrel_sprite(True, (255, 140, 0)), (72 * scale, 60 * scale))
+                s_rot = pygame.transform.rotate(s_raw, anim_angle)
+                s_rect = s_rot.get_rect(center=(280, 420))
+                screen.blit(s_rot, s_rect.topleft)
+                screen.blit(font.render("WINNER FLIPS!", True, (255, 180, 80)), (230, 490))
+
+                # P2 Dizzy & Smoking
+                v_raw = pygame.transform.scale(create_viper_sprite(is_boss=False, flash_white=(timeout_timer % 10 < 5)), (84 * 1.9, 54 * 1.9))
+                v_rect = v_raw.get_rect(center=(520, 420))
+                screen.blit(v_raw, v_rect.topleft)
+                screen.blit(font.render("SMOKING ENGINE...", True, (255, 80, 80)), (460, 490))
+            else:
+                # P2 Spinning in celebration
+                v_raw = pygame.transform.scale(create_viper_sprite(is_boss=False, flash_white=False), (84 * 1.9, 54 * 1.9))
+                v_rot = pygame.transform.rotate(v_raw, anim_angle)
+                v_rect = v_rot.get_rect(center=(520, 420))
+                screen.blit(v_rot, v_rect.topleft)
+                screen.blit(font.render("AERIAL VICTORY SPIN!", True, (0, 210, 255)), (440, 490))
+
+                # P1 Knocked Back
+                s_raw = pygame.transform.scale(create_squirrel_sprite(False, (255, 80, 80)), (72 * scale, 60 * scale))
+                screen.blit(s_raw, (240, 390))
+                screen.blit(font.render("DIZZY STUN...", True, (255, 80, 80)), (250, 490))
+
+            # Countdown Bar
+            screen.blit(big_font.render(f"NEXT ROUND IN: {rem_sec}s", True, (255, 230, 100)), (SCREEN_WIDTH // 2 - 130, 540))
+
+            # Timeout expired -> Return to match
+            if timeout_timer <= 0:
+                if prev_mode == "CAMPAIGN":
+                    game_state = "CAMPAIGN"
+                    if break_winner == "P1":
+                        current_level = min(max_levels, current_level + 1)
+                    p1_hp = min(p1_max_hp, p1_hp + (80 if bonus_won_by == "P1" else 50))
+                    p1_med_kits = min(6, p1_med_kits + 1)
+                    p1_decoys = min(6, p1_decoys + 1)
+                    campaign_enemies = spawn_campaign_wave(current_level)
+                else:
+                    game_state = "DUEL"
+                    p1_hp = min(p1_max_hp, 120 + (30 if bonus_won_by == "P1" else 0))
+                    p2_hp = min(p2_max_hp, 120 + (30 if bonus_won_by == "P2" else 0))
+                    p1_med_kits = 2
+                    p1_decoys = 3
+                    p2_decoys = 3
+
+                p1_x, p1_y = 120.0, 300.0
+                p2_x, p2_y = 650.0, 300.0
+                p1_bullets.clear()
+                p2_bullets.clear()
+                enemy_bullets.clear()
+                active_decoys.clear()
 
             pygame.display.flip()
             clock.tick(60)
             await asyncio.sleep(0)
             continue
 
-        # ==================== STATE 2: ACTIVE GAMEPLAY ====================
+        # Draw Stealth Holes
+        for hole in burrow_holes:
+            pygame.draw.circle(screen, (35, 10, 50), hole, 22)
+            pygame.draw.circle(screen, (160, 40, 255), hole, 22, 2)
+            pygame.draw.circle(screen, (10, 5, 20), hole, 16)
+
         keys = pygame.key.get_pressed()
-        is_moving = False
+        mouse_buttons = pygame.mouse.get_pressed()
 
-        if player_hp > 0:
-            if keys[pygame.K_LEFT] or keys[pygame.K_a]:
-                vel_x = -5.8
-                dash_dir = -1
-                is_moving = True
-            elif keys[pygame.K_RIGHT] or keys[pygame.K_d]:
-                vel_x = 5.8
-                dash_dir = 1
-                is_moving = True
+        center_p1_x = p1_x + 50
+        center_p1_y = p1_y + 40
+
+        # Update Active Decoys
+        for dec in active_decoys[:]:
+            dec["life"] -= 1
+            if dec["life"] <= 0:
+                active_decoys.remove(dec)
+
+        # ======================================================================
+        # PLAYER 1 CONTROLS
+        # ======================================================================
+        if p1_hp > 0:
+            pad_x = ps_pad_p1.get_axis(0) if ps_pad_p1 and abs(ps_pad_p1.get_axis(0)) > 0.15 else 0.0
+            pad_y = ps_pad_p1.get_axis(1) if ps_pad_p1 and abs(ps_pad_p1.get_axis(1)) > 0.15 else 0.0
+
+            if keys[pygame.K_a] or pad_x < -0.3:
+                p1_x -= p1_speed
+            if keys[pygame.K_d] or pad_x > 0.3:
+                p1_x += p1_speed
+            if keys[pygame.K_w] or pad_y < -0.3:
+                p1_y -= p1_speed
+            if keys[pygame.K_s] or pad_y > 0.3:
+                p1_y += p1_speed
+
+            p1_x = max(10, min(SCREEN_WIDTH - 110, p1_x))
+            p1_y = max(55, min(SCREEN_HEIGHT - 90, p1_y))
+
+            pad_guard = ps_pad_p1 and (ps_pad_p1.get_button(4) or ps_pad_p1.get_button(9) or ps_pad_p1.get_axis(4) > 0.3)
+            if (keys[pygame.K_e] or pad_guard) and p1_guard_energy > 5.0:
+                p1_guard = True
+                p1_guard_energy -= 0.6
             else:
-                vel_x *= 0.7
+                p1_guard = False
+                if p1_guard_energy < 100.0:
+                    p1_guard_energy += 0.3
 
-            # Jet Jump (W / UP / C)
-            if (keys[pygame.K_UP] or keys[pygame.K_w] or keys[pygame.K_c]) and is_grounded:
-                vel_y = -13.5
-                is_grounded = False
-                is_moving = True
-                for _ in range(6):
-                    hit_sparks.append([
-                        player_x + 50,
-                        player_y + 110,
-                        random.uniform(-3.0, 3.0),
-                        random.uniform(1.0, 4.0),
-                        random.randint(2, 4),
-                        (255, 140, 0),
-                        15,
-                    ])
+            pad_aim_x = ps_pad_p1.get_axis(2) if ps_pad_p1 and abs(ps_pad_p1.get_axis(2)) > 0.2 else 0.0
+            pad_aim_y = ps_pad_p1.get_axis(3) if ps_pad_p1 and abs(ps_pad_p1.get_axis(3)) > 0.2 else 0.0
 
-            # Tail Helicopter Glide
-            if (keys[pygame.K_DOWN] or keys[pygame.K_s]) and not is_grounded:
-                if vel_y > 1.8:
-                    vel_y = 1.8
+            if math.hypot(pad_aim_x, pad_aim_y) > 0.3:
+                p1_aim_angle = math.atan2(pad_aim_y, pad_aim_x)
+            else:
+                p1_aim_angle = math.atan2(mouse_pos[1] - center_p1_y, mouse_pos[0] - center_p1_x)
 
-            # Cyber Cloak
-            if vanish_cooldown > 0:
-                vanish_cooldown -= 1
-            if (keys[pygame.K_LSHIFT] or keys[pygame.K_RSHIFT] or keys[pygame.K_x]) and vanish_cooldown == 0 and vanish_timer == 0:
-                vanish_timer = 120
-                vanish_cooldown = 300
-                floating_texts.append(["CLOAK ACTIVATED!", player_x + 10, player_y - 20, (0, 240, 255), 40])
-                for _ in range(12):
-                    hit_sparks.append([
-                        player_x + 60,
-                        player_y + 50,
-                        random.uniform(-4, 4),
-                        random.uniform(-4, 4),
-                        3,
-                        (0, 240, 255),
-                        20,
-                    ])
+            pad_shoot = ps_pad_p1 and (ps_pad_p1.get_button(0) or ps_pad_p1.get_button(5) or (ps_pad_p1.get_numaxes() > 5 and ps_pad_p1.get_axis(5) > 0.3))
+            current_wpn = WEAPON_TIERS[p1_power_tier]
+            p1_dmg = current_wpn["dmg"] * (3 if game_state == "CAMPAIGN" else 1)
 
-            # Warp Dash
-            if dash_cooldown > 0:
-                dash_cooldown -= 1
-            if keys[pygame.K_v] and dash_cooldown == 0 and dash_timer == 0:
-                dash_timer = 14
-                dash_cooldown = 110
-                floating_texts.append(["WARP SWOOP!", player_x + 20, player_y - 15, (255, 230, 80), 30])
-
-            if dash_timer > 0:
-                dash_timer -= 1
-                vel_x = dash_dir * 18.0
-                vel_y = 0.0
-                ghost_trails.append({"x": player_x, "y": player_y, "alpha": 180})
-
-            if dash_timer == 0:
-                vel_y += gravity
-                player_y += vel_y
-
-            player_x += vel_x
-
-            if player_y >= floor_y:
-                player_y = floor_y
-                vel_y = 0.0
-                is_grounded = True
-            if player_y <= 50:
-                player_y = 50
-                vel_y = 0.0
-
-            player_x = max(10, min(SCREEN_WIDTH - 250, player_x))
-
-            # Fire weapon
-            if shoot_cooldown > 0:
-                shoot_cooldown -= 1
-            if keys[pygame.K_SPACE] and shoot_cooldown == 0:
-                b_width = 16 + (power_tier * 3)
-                b_height = 8 + power_tier
-                bullet_info = {
-                    "rect": pygame.Rect(player_x + 115, player_y + 48, b_width, b_height),
-                    "speed": current_weapon["speed"],
-                    "color_outer": current_weapon["color_outer"],
-                    "color_core": current_weapon["color_core"],
-                    "dmg": current_weapon["dmg"],
-                }
-                player_bullets.append(bullet_info)
-                shoot_cooldown = max(7, 13 - power_tier)
-
-        if vanish_timer > 0:
-            vanish_timer -= 1
-
-        # Restart
-        if player_hp <= 0 and keys[pygame.K_r]:
-            player_hp = player_max_hp
-            power_tier = 1
-            power_charge = 0.0
-            player_x, player_y = 70.0, 360.0
-            vel_x, vel_y = 0.0, 0.0
-            enemies = spawn_wave(current_level)
-            player_bullets.clear()
-            enemy_bullets.clear()
-            energy_pickups.clear()
-            hit_sparks.clear()
-            floating_texts.clear()
-            ghost_trails.clear()
-            combo_hits = 0
-
-        # Skip level testing
-        if keys[pygame.K_n] and level_banner_timer == 0:
-            enemies.clear()
-
-        for gt in ghost_trails[:]:
-            gt["alpha"] -= 16
-            if gt["alpha"] <= 0:
-                ghost_trails.remove(gt)
-
-        if combo_timer > 0:
-            combo_timer -= 1
-        else:
-            combo_hits = 0
-
-        # Dynamic Enemy AI Updates
-        for e in enemies:
-            can_fire = e.update(SCREEN_HEIGHT, SCREEN_WIDTH, player_y)
-            if can_fire and player_hp > 0:
-                bullet_y = e.y + (e.height // 2)
-                bullet_color = (255, 60, 90) if e.is_boss else (0, 220, 255)
-                enemy_bullets.append({
-                    "rect": pygame.Rect(e.x - 10, bullet_y, 16, 6),
-                    "color": bullet_color,
-                    "dmg": 18 if e.is_boss else 10,
+            if p1_shoot_cd > 0:
+                p1_shoot_cd -= 1
+            if (mouse_buttons[0] or keys[pygame.K_SPACE] or pad_shoot) and p1_shoot_cd == 0 and not p1_guard:
+                p1_bullets.append({
+                    "x": center_p1_x, "y": center_p1_y,
+                    "vx": math.cos(p1_aim_angle) * current_wpn["speed"],
+                    "vy": math.sin(p1_aim_angle) * current_wpn["speed"],
+                    "radius": 6 + p1_power_tier,
+                    "dmg": p1_dmg,
+                    "color_outer": current_wpn["color_outer"],
+                    "color_core": current_wpn["color_core"],
                 })
+                SFX.snd_shoot.play()
+                p1_shoot_cd = max(7, 13 - p1_power_tier)
+
+        # ======================================================================
+        # 1-PLAYER CAMPAIGN LOGIC
+        # ======================================================================
+        if game_state == "CAMPAIGN":
+            p1_target_x = center_p1_x
+            p1_target_y = center_p1_y
+
+            p1_decoys_active = [d for d in active_decoys if d["type"] == "p1"]
+            if len(p1_decoys_active) > 0:
+                p1_target_x = p1_decoys_active[0]["x"] + 36
+                p1_target_y = p1_decoys_active[0]["y"] + 30
+
+            for e in campaign_enemies:
+                shot = e.update(burrow_holes, p1_target_x, p1_target_y, SCREEN_WIDTH, SCREEN_HEIGHT)
+                if shot and p1_hp > 0:
+                    enemy_bullets.append(shot)
+
+            for b in enemy_bullets[:]:
+                b["x"] += b["vx"]
+                b["y"] += b["vy"]
+                if b["x"] < 0 or b["x"] > SCREEN_WIDTH or b["y"] < 0 or b["y"] > SCREEN_HEIGHT:
+                    enemy_bullets.remove(b)
+
+            p1_hitbox = pygame.Rect(p1_x + 15, p1_y + 10, 70, 60)
+            for b in enemy_bullets[:]:
+                b_rect = pygame.Rect(b["x"] - 6, b["y"] - 6, 12, 12)
+                if p1_guard and math.hypot(b["x"] - center_p1_x, b["y"] - center_p1_y) < 60:
+                    enemy_bullets.remove(b)
+                    SFX.snd_shield.play()
+                elif p1_hitbox.colliderect(b_rect):
+                    p1_hp = max(0, p1_hp - b["dmg"])
+                    enemy_bullets.remove(b)
+                    SFX.snd_hit.play()
+
+            for b in p1_bullets[:]:
+                b_rect = pygame.Rect(b["x"] - b["radius"], b["y"] - b["radius"], b["radius"] * 2, b["radius"] * 2)
+                for e in campaign_enemies[:]:
+                    if not e.is_burrowed and e.rect.colliderect(b_rect):
+                        if b in p1_bullets:
+                            p1_bullets.remove(b)
+                        e.hp -= b["dmg"]
+                        e.flash_timer = 3
+                        SFX.snd_hit.play()
+
+                        total_score += b["dmg"]
+                        p1_power_charge += 12.0
+                        if p1_power_charge >= 100.0 and p1_power_tier < 5:
+                            p1_power_charge = 0.0
+                            p1_power_tier += 1
+                            SFX.snd_win.play()
+                            floating_texts.append([f"POWER TIER {p1_power_tier}!", SCREEN_WIDTH // 2 - 90, 200, (255, 215, 60), 40])
+
+                        floating_texts.append([f"+{b['dmg']} PTS", b["x"], b["y"] - 15, b["color_core"], 25])
+
+                        if e.hp <= 0:
+                            campaign_enemies.remove(e)
+                            SFX.snd_explode.play()
+                        break
+
+            # Trigger 5-Second Break on Level Complete
+            if len(campaign_enemies) == 0:
+                trigger_5s_break("P1", "CAMPAIGN")
+
+            # Player Down
+            if p1_hp <= 0:
+                trigger_5s_break("P2", "CAMPAIGN")
+
+        # ======================================================================
+        # 2-PLAYER DUEL LOGIC
+        # ======================================================================
+        elif game_state == "DUEL":
+            center_p2_x = p2_x + 40
+            center_p2_y = p2_y + 25
+
+            if p2_hp > 0:
+                if p2_burrow_cd > 0:
+                    p2_burrow_cd -= 1
+
+                if p2_is_burrowed:
+                    p2_burrow_timer -= 1
+                    if p2_burrow_timer <= 0:
+                        dest = random.choice(burrow_holes)
+                        p2_x = dest[0] - 40
+                        p2_y = dest[1] - 25
+                        p2_is_burrowed = False
+                        SFX.snd_burrow.play()
+                else:
+                    p2_pad_x = ps_pad_p2.get_axis(0) if ps_pad_p2 and abs(ps_pad_p2.get_axis(0)) > 0.15 else 0.0
+                    p2_pad_y = ps_pad_p2.get_axis(1) if ps_pad_p2 and abs(ps_pad_p2.get_axis(1)) > 0.15 else 0.0
+
+                    p2_vx, p2_vy = 0.0, 0.0
+                    if keys[pygame.K_LEFT] or keys[pygame.K_KP4] or p2_pad_x < -0.3:
+                        p2_vx -= p2_speed
+                    if keys[pygame.K_RIGHT] or keys[pygame.K_KP6] or p2_pad_x > 0.3:
+                        p2_vx += p2_speed
+                    if keys[pygame.K_UP] or keys[pygame.K_KP8] or p2_pad_y < -0.3:
+                        p2_vy -= p2_speed
+                    if keys[pygame.K_DOWN] or keys[pygame.K_KP5] or keys[pygame.K_KP2] or p2_pad_y > 0.3:
+                        p2_vy += p2_speed
+
+                    if keys[pygame.K_RCTRL] or keys[pygame.K_KP_PERIOD] or (ps_pad_p2 and ps_pad_p2.get_button(5)):
+                        p2_vx *= 1.6
+                        p2_vy *= 1.6
+
+                    p2_x += p2_vx
+                    p2_y += p2_vy
+                    p2_x = max(10, min(SCREEN_WIDTH - 90, p2_x))
+                    p2_y = max(55, min(SCREEN_HEIGHT - 70, p2_y))
+
+                    aim_target_x = center_p1_x
+                    aim_target_y = center_p1_y
+                    p1_decoys_active = [d for d in active_decoys if d["type"] == "p1"]
+                    if len(p1_decoys_active) > 0:
+                        aim_target_x = p1_decoys_active[0]["x"] + 36
+                        aim_target_y = p1_decoys_active[0]["y"] + 30
+
+                    p2_dx = aim_target_x - center_p2_x
+                    p2_dy = aim_target_y - center_p2_y
+                    p2_angle = math.degrees(math.atan2(p2_dy, p2_dx))
+
+                    p2_current_wpn = WEAPON_TIERS[p2_power_tier]
+                    p2_pad_shoot = ps_pad_p2 and (ps_pad_p2.get_button(0) or ps_pad_p2.get_button(7))
+
+                    if p2_shoot_cd > 0:
+                        p2_shoot_cd -= 1
+                    if (keys[pygame.K_KP0] or keys[pygame.K_RSHIFT] or p2_pad_shoot) and p2_shoot_cd == 0:
+                        rad = math.radians(p2_angle)
+                        p2_bullets.append({
+                            "x": center_p2_x, "y": center_p2_y,
+                            "vx": math.cos(rad) * p2_current_wpn["speed"],
+                            "vy": math.sin(rad) * p2_current_wpn["speed"],
+                            "radius": 5 + p2_power_tier,
+                            "dmg": p2_current_wpn["dmg"],
+                        })
+                        SFX.snd_v_shoot.play()
+                        p2_shoot_cd = max(8, 14 - p2_power_tier)
+
+            if p2_flash_timer > 0:
+                p2_flash_timer -= 1
+
+            for b in p2_bullets[:]:
+                b["x"] += b["vx"]
+                b["y"] += b["vy"]
+                if b["x"] < 0 or b["x"] > SCREEN_WIDTH or b["y"] < 0 or b["y"] > SCREEN_HEIGHT:
+                    p2_bullets.remove(b)
+
+            p1_hitbox = pygame.Rect(p1_x + 15, p1_y + 10, 70, 60)
+            p2_hitbox = pygame.Rect(p2_x + 10, p2_y + 10, 70, 45)
+
+            for b in p2_bullets[:]:
+                b_rect = pygame.Rect(b["x"] - 5, b["y"] - 5, 10, 10)
+                if p1_guard and math.hypot(b["x"] - center_p1_x, b["y"] - center_p1_y) < 58:
+                    p2_bullets.remove(b)
+                    SFX.snd_shield.play()
+                elif p1_hitbox.colliderect(b_rect) and p1_hp > 0:
+                    p1_hp = max(0, p1_hp - b["dmg"])
+                    p2_bullets.remove(b)
+                    SFX.snd_hit.play()
+                    p2_power_charge += 14.0
+                    if p2_power_charge >= 100.0 and p2_power_tier < 5:
+                        p2_power_charge = 0.0
+                        p2_power_tier += 1
+
+            for b in p1_bullets[:]:
+                b_rect = pygame.Rect(b["x"] - 6, b["y"] - 6, 12, 12)
+                if not p2_is_burrowed and p2_hitbox.colliderect(b_rect) and p2_hp > 0:
+                    p2_hp = max(0, p2_hp - b["dmg"])
+                    p2_flash_timer = 3
+                    p1_bullets.remove(b)
+                    SFX.snd_hit.play()
+                    p1_power_charge += 14.0
+                    if p1_power_charge >= 100.0 and p1_power_tier < 5:
+                        p1_power_charge = 0.0
+                        p1_power_tier += 1
+
+            # Check Duel Victory -> Trigger 5-Second Break
+            if p1_hp <= 0:
+                p2_wins += 1
+                trigger_5s_break("P2", "DUEL")
+            elif p2_hp <= 0:
+                p1_wins += 1
+                trigger_5s_break("P1", "DUEL")
 
         # Update Projectiles
-        for b in player_bullets[:]:
-            b["rect"].x += b["speed"]
-            if b["rect"].x > SCREEN_WIDTH:
-                player_bullets.remove(b)
+        for b in p1_bullets[:]:
+            b["x"] += b["vx"]
+            b["y"] += b["vy"]
+            if b["x"] < 0 or b["x"] > SCREEN_WIDTH or b["y"] < 0 or b["y"] > SCREEN_HEIGHT:
+                p1_bullets.remove(b)
 
-        for b in enemy_bullets[:]:
-            b["rect"].x -= 9
-            if b["rect"].x < 0:
-                enemy_bullets.remove(b)
+        # Draw Projectiles
+        for b in p1_bullets:
+            pygame.draw.circle(screen, b["color_outer"], (int(b["x"]), int(b["y"])), b["radius"])
+            pygame.draw.circle(screen, b["color_core"], (int(b["x"]), int(b["y"])), max(2, b["radius"] - 3))
 
-        p_hitbox = pygame.Rect(player_x + 30, player_y + 20, 80, 80)
-        for ep in energy_pickups[:]:
-            ep[0] += ep[2]
-            ep[1] += ep[3]
-            ep[4] -= 1
-            pickup_rect = pygame.Rect(ep[0] - 8, ep[1] - 8, 16, 16)
-            if p_hitbox.colliderect(pickup_rect):
-                power_charge += 30.0
-                energy_pickups.remove(ep)
-                floating_texts.append(["+POWER!", player_x + 50, player_y - 10, (100, 255, 180), 30])
-            elif ep[4] <= 0:
-                energy_pickups.remove(ep)
+        for b in (enemy_bullets if game_state == "CAMPAIGN" else p2_bullets):
+            color = b["color"] if "color" in b else (0, 210, 255)
+            r = b["radius"] if "radius" in b else 6
+            pygame.draw.circle(screen, color, (int(b["x"]), int(b["y"])), r)
+            pygame.draw.circle(screen, (255, 255, 255), (int(b["x"]), int(b["y"])), max(2, r - 3))
 
-        for b in enemy_bullets[:]:
-            if p_hitbox.colliderect(b["rect"]):
-                if vanish_timer > 0:
-                    enemy_bullets.remove(b)
-                    floating_texts.append(["DODGED!", player_x + 30, player_y - 15, (0, 240, 255), 25])
-                else:
-                    player_hp -= b["dmg"]
-                    enemy_bullets.remove(b)
-                    combo_hits = 0
-
-        # Target hits
-        for b in player_bullets[:]:
-            for e in enemies[:]:
-                if e.rect.colliderect(b["rect"]):
-                    if b in player_bullets:
-                        player_bullets.remove(b)
-
-                    dmg = b["dmg"]
-                    e.hp -= dmg
-                    e.flash_timer = 3
-
-                    combo_hits += 1
-                    combo_timer = 70
-                    hit_points = dmg + (combo_hits * 5)
-                    total_score += hit_points
-
-                    power_charge += 12.0
-                    if power_charge >= max_power_charge and power_tier < 5:
-                        power_charge = 0.0
-                        power_tier += 1
-                        floating_texts.append([
-                            f"WEAPON UPGRADED: {WEAPON_TIERS[power_tier]['name']}!",
-                            SCREEN_WIDTH // 2 - 140,
-                            SCREEN_HEIGHT // 2 - 80,
-                            WEAPON_TIERS[power_tier]['color_outer'],
-                            50,
-                        ])
-
-                    impact_x = b["rect"].x + 8
-                    impact_y = b["rect"].y + 4
-                    for _ in range(8):
-                        hit_sparks.append([
-                            impact_x,
-                            impact_y,
-                            random.uniform(-4.0, 4.0),
-                            random.uniform(-3.5, 3.5),
-                            random.randint(2, 5),
-                            random.choice([b["color_outer"], b["color_core"], (255, 255, 255)]),
-                            random.randint(10, 20),
-                        ])
-
-                    floating_texts.append([
-                        f"+{hit_points}",
-                        impact_x - 10,
-                        impact_y - 15,
-                        b["color_core"],
-                        30,
-                    ])
-
-                    if e.hp <= 0:
-                        enemies.remove(e)
-                        total_score += 200 if e.is_boss else 75
-                        energy_pickups.append([
-                            e.x + e.width // 2,
-                            e.y + e.height // 2,
-                            random.uniform(-1.5, -0.5),
-                            random.uniform(-1.0, 1.0),
-                            180,
-                        ])
-                        for _ in range(22):
-                            hit_sparks.append([
-                                e.x + e.width // 2,
-                                e.y + e.height // 2,
-                                random.uniform(-6.0, 6.0),
-                                random.uniform(-6.0, 6.0),
-                                random.randint(3, 7),
-                                (255, 70, 90) if e.is_boss else (0, 220, 255),
-                                25,
-                            ])
-                    break
-
-        # Level Progression & Win Condition
-        if len(enemies) == 0:
-            if current_level < max_levels:
-                current_level += 1
-                level_banner_timer = 80
-                player_hp = min(player_max_hp, player_hp + 30)
-                enemies = spawn_wave(current_level)
-                player_bullets.clear()
-                enemy_bullets.clear()
+        # Draw Active Virtual Image Decoys
+        for dec in active_decoys:
+            alpha = 130 + int(math.sin(dec["life"] * 0.2) * 50)
+            if dec["type"] == "p1":
+                h_surf = pygame.transform.scale(create_squirrel_sprite(True, (0, 240, 255), alpha=alpha), (72 * scale, 60 * scale))
+                screen.blit(h_surf, (dec["x"], dec["y"]))
+                pygame.draw.circle(screen, (0, 240, 255), (int(dec["x"] + 36), int(dec["y"] + 30)), 45, 1)
             else:
-                # 100 Levels beaten -> Start 5-second victory celebration!
-                game_state = "WIN_CELEBRATION"
-                celebration_timer = celebration_frames
-                fireworks.clear()
+                v_h_raw = pygame.transform.scale(create_viper_sprite(is_boss=False, flash_white=False, alpha=alpha), (84 * 1.9, 54 * 1.9))
+                screen.blit(v_h_raw, (dec["x"], dec["y"]))
+                pygame.draw.circle(screen, (200, 100, 255), (int(dec["x"] + 40), int(dec["y"] + 25)), 45, 1)
 
-        # Update hit particles & floating texts
-        for spark in hit_sparks[:]:
-            spark[0] += spark[2]
-            spark[1] += spark[3]
-            spark[6] -= 1
-            if spark[6] <= 0:
-                hit_sparks.remove(spark)
-
+        # Draw Floating Texts
         for ft in floating_texts[:]:
             ft[2] -= 1.2
             ft[4] -= 1
             if ft[4] <= 0:
                 floating_texts.remove(ft)
-
-        # Draw Ghost Trails
-        for gt in ghost_trails:
-            g_surf = s_ghost.copy()
-            g_surf.set_alpha(gt["alpha"])
-            screen.blit(g_surf, (gt["x"], gt["y"]))
-
-        # Draw Bullets
-        for b in player_bullets:
-            pygame.draw.ellipse(screen, b["color_core"], b["rect"])
-            pygame.draw.ellipse(screen, b["color_outer"], b["rect"], 3)
-
-        for b in enemy_bullets:
-            pygame.draw.ellipse(screen, b["color"], b["rect"])
-
-        for ep in energy_pickups:
-            pygame.draw.circle(screen, (0, 255, 180), (int(ep[0]), int(ep[1])), 7)
-            pygame.draw.circle(screen, (255, 255, 255), (int(ep[0]), int(ep[1])), 4)
-
-        for spark in hit_sparks:
-            pygame.draw.circle(screen, spark[5], (int(spark[0]), int(spark[1])), spark[4])
-
-        for ft in floating_texts:
-            f_surf = font.render(ft[0], True, ft[3])
-            screen.blit(f_surf, (int(ft[1]), int(ft[2])))
-
-        # Ground Floor Indicator
-        pygame.draw.line(screen, (35, 45, 75), (0, int(floor_y + 115)), (SCREEN_WIDTH, int(floor_y + 115)), 2)
-
-        # Draw Player
-        tail_anim_timer += 1
-        use_alert = (tail_anim_timer // 15) % 2 == 1 or is_moving or not is_grounded
-        current_squirrel = s_alert if use_alert else s_normal
-
-        if player_hp > 0:
-            if vanish_timer > 0:
-                if (vanish_timer // 4) % 2 == 0:
-                    screen.blit(s_ghost, (player_x, player_y))
             else:
-                screen.blit(current_squirrel, (player_x, player_y))
+                screen.blit(font.render(ft[0], True, ft[3]), (int(ft[1]), int(ft[2])))
 
-        # Draw Enemies
-        for e in enemies:
-            screen.blit(e.sprite, (e.x, e.y))
-            bar_color = (255, 50, 70) if e.is_boss else (0, 210, 255)
-            draw_bar(screen, int(e.x), int(e.y) - 12, e.width, 8, e.hp, e.max_hp, bar_color)
+        # Draw Player 1
+        s_surf = pygame.transform.scale(create_squirrel_sprite(p1_guard, WEAPON_TIERS[p1_power_tier]["color_outer"]), (72 * scale, 60 * scale))
+        if p1_hp > 0:
+            screen.blit(s_surf, (p1_x, p1_y))
+            if p1_guard:
+                pygame.draw.circle(screen, (0, 220, 255), (int(center_p1_x), int(center_p1_y)), 52, 3)
 
-        # HUD
-        screen.blit(font.render("AGENT S.Q.U.I.R.E.L.", True, (255, 180, 80)), (20, 10))
-        draw_bar(screen, 20, 30, 140, 10, player_hp, player_max_hp, (255, 140, 0))
+            p1_aim = p1_aim_angle if 'p1_aim_angle' in locals() else 0.0
+            pygame.draw.line(screen, WEAPON_TIERS[p1_power_tier]["color_outer"], (center_p1_x, center_p1_y),
+                             (center_p1_x + math.cos(p1_aim) * 35, center_p1_y + math.sin(p1_aim) * 35), 3)
 
-        p_label = f"PWR TIER {power_tier}: {current_weapon['name']}"
-        screen.blit(font.render(p_label, True, current_weapon["color_outer"]), (20, 46))
-        draw_bar(screen, 20, 66, 140, 8, power_charge, max_power_charge, current_weapon["color_outer"])
+        # Draw Player 2 or Campaign Enemies
+        if game_state == "CAMPAIGN":
+            for e in campaign_enemies:
+                e.draw(screen)
+        elif game_state == "DUEL" and p2_hp > 0:
+            if not p2_is_burrowed:
+                v_raw = pygame.transform.scale(create_viper_sprite(flash_white=(p2_flash_timer > 0)), (84 * 1.9, 54 * 1.9))
+                v_rot = pygame.transform.rotate(v_raw, -p2_angle)
+                v_rect = v_rot.get_rect(center=(center_p2_x, center_p2_y))
+                screen.blit(v_rot, v_rect.topleft)
+            else:
+                screen.blit(font.render("[UNDERGROUND]", True, (200, 100, 255)), (center_p2_x - 45, center_p2_y - 30))
 
-        cloak_status = "CLOAK: READY" if vanish_cooldown == 0 else f"CLOAK: {vanish_cooldown // 60}s"
-        dash_status = "DASH: READY" if dash_cooldown == 0 else "DASH: ..."
-        screen.blit(font.render(cloak_status, True, (0, 220, 255) if vanish_cooldown == 0 else (120, 140, 160)), (20, 82))
-        screen.blit(font.render(dash_status, True, (255, 230, 100) if dash_cooldown == 0 else (120, 140, 160)), (140, 82))
+        # Reticle
+        if not ps_pad_p1:
+            pygame.draw.circle(screen, WEAPON_TIERS[p1_power_tier]["color_outer"], mouse_pos, 8, 2)
+            pygame.draw.circle(screen, (255, 255, 255), mouse_pos, 2)
 
-        level_str = f"LEVEL {current_level} / {max_levels}"
-        if current_level % 10 == 0:
-            level_str += " [BOSS ALERT]"
-        screen.blit(font.render(level_str, True, (255, 230, 100)), (SCREEN_WIDTH // 2 - 80, 12))
-        screen.blit(font.render(f"SCORE: {total_score}", True, (200, 210, 240)), (SCREEN_WIDTH - 150, 12))
+        # ======================================================================
+        # DIGITAL NUMERIC HUD
+        # ======================================================================
+        p1_col = (255, 140, 0) if p1_hp > 50 else (255, 60, 60)
+        p1_title = "P1: S.Q.U.I.R.E.L. (3X POWER)" if game_state == "CAMPAIGN" else "P1: S.Q.U.I.R.E.L."
+        screen.blit(font.render(p1_title, True, (255, 180, 80)), (20, 12))
+        screen.blit(num_font.render(f"HP: {int(p1_hp)} / {p1_max_hp}", True, p1_col), (20, 30))
+        screen.blit(font.render(f"TIER {p1_power_tier} | MEDS: {p1_med_kits} | DECOYS [F]: {p1_decoys}", True, (0, 220, 255)), (20, 56))
 
-        if combo_hits > 1:
-            c_surf = font.render(f"COMBO x{combo_hits}!", True, (255, 100, 220))
-            screen.blit(c_surf, (SCREEN_WIDTH - 150, 34))
+        if game_state == "CAMPAIGN":
+            lvl_txt = f"LEVEL {current_level} / {max_levels}"
+            screen.blit(font.render(lvl_txt, True, (255, 230, 100)), (SCREEN_WIDTH // 2 - 60, 12))
+            screen.blit(font.render(f"SCORE: {total_score}", True, (200, 210, 240)), (SCREEN_WIDTH - 150, 12))
 
-        if level_banner_timer > 0:
-            level_banner_timer -= 1
-            b_text = f"LEVEL {current_level}" if current_level % 10 != 0 else f"LEVEL {current_level}: VIPER OVERLORD"
-            color = (255, 70, 90) if current_level % 10 == 0 else (0, 230, 255)
-            b_surf = big_font.render(b_text, True, color)
-            screen.blit(b_surf, (SCREEN_WIDTH // 2 - b_surf.get_width() // 2, SCREEN_HEIGHT // 2 - 50))
-
-        if player_hp <= 0:
-            over_surf = big_font.render("MISSION FAILED", True, (255, 70, 70))
-            sub_surf = font.render(f"Fell at Level {current_level} - Press 'R' to Retry", True, (240, 240, 240))
-            screen.blit(over_surf, (SCREEN_WIDTH // 2 - over_surf.get_width() // 2, SCREEN_HEIGHT // 2 - 30))
-            screen.blit(sub_surf, (SCREEN_WIDTH // 2 - sub_surf.get_width() // 2, SCREEN_HEIGHT // 2 + 15))
+        elif game_state == "DUEL":
+            p2_col = (0, 210, 255) if p2_hp > 35 else (255, 60, 60)
+            p2_head = font.render("P2: V.I.P.E.R. DRONE", True, (0, 210, 255))
+            p2_num = num_font.render(f"HP: {int(p2_hp)} / {p2_max_hp}", True, p2_col)
+            b_txt = "BURROW READY" if p2_burrow_cd == 0 else f"BURROW: {p2_burrow_cd // 60}s"
+            p2_sub = font.render(f"TIER {p2_power_tier} | DECOYS [7]: {p2_decoys} | WINS: {p2_wins}", True, (200, 210, 230))
+            screen.blit(p2_head, (SCREEN_WIDTH - p2_head.get_width() - 20, 12))
+            screen.blit(p2_num, (SCREEN_WIDTH - p2_num.get_width() - 20, 30))
+            screen.blit(p2_sub, (SCREEN_WIDTH - p2_sub.get_width() - 20, 56))
 
         pygame.display.flip()
         clock.tick(60)
