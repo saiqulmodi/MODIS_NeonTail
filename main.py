@@ -11,8 +11,6 @@ pygame.mixer.init(frequency=44100, size=-16, channels=2, buffer=512)
 pygame.joystick.init()
 
 joysticks = [pygame.joystick.Joystick(i) for i in range(pygame.joystick.get_count())]
-for joy in joysticks:
-    joy.init()
 
 sprite_dir = Path("assets/sprites")
 sprite_dir.mkdir(parents=True, exist_ok=True)
@@ -92,6 +90,7 @@ class RetroSoundEngine:
         self.snd_burrow = self.create_tone(280, 90, 0.28, "square", volume=0.3)
         self.snd_win = self.create_tone(440, 880, 0.35, "sine", volume=0.4)
         self.snd_bonus = self.create_tone(500, 1400, 0.25, "sine", volume=0.45)
+        self.snd_split = self.create_tone(350, 1050, 0.3, "sine", volume=0.4)
 
 
 SFX = RetroSoundEngine()
@@ -396,6 +395,11 @@ async def main():
     p1_power_tier = 1
     p1_power_charge = 0.0
 
+    # MULTI-SQUIRREL MITOSIS CLONE SQUAD
+    p1_split_timer = 0
+    p1_split_cd = 0
+    p1_split_charges = 3
+
     p1_wins = 0
     p2_wins = 0
     p2_x, p2_y = 650.0, 300.0
@@ -432,11 +436,12 @@ async def main():
     floating_texts = []
 
     def handle_round_conclusion(winner: str, origin_mode: str):
-        nonlocal game_state, break_timer, break_winner, break_quote, break_award, active_dance, bonus_won_by, prev_mode, milestone_count, active_mutator
+        nonlocal game_state, break_timer, break_winner, break_quote, break_award, active_dance, bonus_won_by, prev_mode, milestone_count, active_mutator, p1_split_timer
         prev_mode = origin_mode
         break_winner = winner
         bonus_won_by = None
         fireworks.clear()
+        p1_split_timer = 0
 
         update_save_data(total_score, current_level)
 
@@ -466,13 +471,14 @@ async def main():
             SFX.snd_hit.play()
 
     def reset_positions():
-        nonlocal p1_x, p1_y, p2_x, p2_y, p1_bullets, p2_bullets, enemy_bullets, active_decoys
+        nonlocal p1_x, p1_y, p2_x, p2_y, p1_bullets, p2_bullets, enemy_bullets, active_decoys, p1_split_timer
         p1_x, p1_y = 120.0, 300.0
         p2_x, p2_y = 650.0, 300.0
         p1_bullets.clear()
         p2_bullets.clear()
         enemy_bullets.clear()
         active_decoys.clear()
+        p1_split_timer = 0
 
     running = True
     while running:
@@ -485,11 +491,7 @@ async def main():
                 running = False
 
             if event.type == pygame.JOYDEVICEADDED:
-                joysticks.clear()
-                for i in range(pygame.joystick.get_count()):
-                    j = pygame.joystick.Joystick(i)
-                    j.init()
-                    joysticks.append(j)
+                joysticks = [pygame.joystick.Joystick(i) for i in range(pygame.joystick.get_count())]
 
             # Mode Selection
             if game_state == "MODE_SELECT":
@@ -500,6 +502,7 @@ async def main():
                     p1_hp = p1_max_hp
                     p1_med_kits = 6
                     p1_decoys = 6
+                    p1_split_charges = 3
                     p1_power_tier = 1
                     p1_power_charge = 0.0
                     SFX.snd_win.play()
@@ -511,6 +514,7 @@ async def main():
                     p1_hp = p1_max_hp
                     p1_med_kits = 2
                     p1_decoys = 3
+                    p1_split_charges = 2
                     p1_power_tier = 1
                     p1_power_charge = 0.0
                     p2_max_hp = 120
@@ -541,7 +545,7 @@ async def main():
                     SFX.snd_heal.play()
                     floating_texts.append([f"+{heal_amt} HP", p1_x + 10, p1_y - 20, (100, 255, 120), 35])
 
-            # P1 Multi-Image Illusion Ring (Ravan / Shadow Clone Array)
+            # P1 Multi-Image Illusion Ring (Ravan / Shadow Clone Array on 'F' / Triangle)
             if game_state in ("CAMPAIGN", "DUEL") and p1_decoys > 0:
                 if (event.type == pygame.KEYDOWN and event.key == pygame.K_f) or \
                    (event.type == pygame.JOYBUTTONDOWN and ps_pad_p1 and event.joy == 0 and event.button == 3):
@@ -555,6 +559,15 @@ async def main():
                         active_decoys.append({"x": cx, "y": cy, "life": 260, "type": "p1"})
                     SFX.snd_decoy.play()
                     floating_texts.append(["8-MIRAGE ILLUSION ACTIVE!", p1_x - 30, p1_y - 30, (0, 240, 255), 45])
+
+            # P1 SQUIRREL MITOSIS: SPLIT INTO 3 SQUIRRELS (Key 'T' or Controller R3/Touchpad)
+            if game_state in ("CAMPAIGN", "DUEL") and p1_split_charges > 0 and p1_split_timer == 0:
+                if (event.type == pygame.KEYDOWN and event.key == pygame.K_t) or \
+                   (event.type == pygame.JOYBUTTONDOWN and ps_pad_p1 and event.joy == 0 and event.button in (8, 10, 11)):
+                    p1_split_charges -= 1
+                    p1_split_timer = 480  # 8 Full seconds of 3 combat squirrels
+                    SFX.snd_split.play()
+                    floating_texts.append(["S.Q.U.I.R.E.L. TRIPLE MITOSIS SQUAD!", p1_x - 70, p1_y - 35, (255, 215, 60), 50])
 
             # P2 Decoy in Duel
             if game_state == "DUEL" and p2_decoys > 0:
@@ -617,55 +630,57 @@ async def main():
         if game_state == "MODE_SELECT":
             t_surf = title_font.render("MODIS NEON TAIL", True, (255, 140, 0))
             sub_surf = font.render("CHOOSE GAMEPLAY MODE", True, (0, 220, 255))
-            screen.blit(t_surf, (SCREEN_WIDTH // 2 - t_surf.get_width() // 2, 50))
-            screen.blit(sub_surf, (SCREEN_WIDTH // 2 - sub_surf.get_width() // 2, 95))
+            screen.blit(t_surf, (SCREEN_WIDTH // 2 - t_surf.get_width() // 2, 45))
+            screen.blit(sub_surf, (SCREEN_WIDTH // 2 - sub_surf.get_width() // 2, 90))
 
             lb_txt = f"BEST RECORD: LEVEL {saved_data.get('max_level_reached', 1)} | HIGH SCORE: {saved_data.get('high_score', 0)}"
-            screen.blit(font.render(lb_txt, True, (255, 215, 60)), (SCREEN_WIDTH // 2 - 200, 125))
+            screen.blit(font.render(lb_txt, True, (255, 215, 60)), (SCREEN_WIDTH // 2 - 200, 120))
 
-            card1 = pygame.Rect(60, 155, 325, 310)
+            card1 = pygame.Rect(55, 150, 335, 325)
             pygame.draw.rect(screen, (18, 22, 38), card1, border_radius=12)
             pygame.draw.rect(screen, (255, 140, 0), card1, 2, border_radius=12)
 
-            screen.blit(big_font.render("1P CAMPAIGN", True, (255, 180, 80)), (80, 175))
+            screen.blit(big_font.render("1P CAMPAIGN", True, (255, 180, 80)), (75, 168))
             lines1 = [
                 "Agent S.Q.U.I.R.E.L. vs AI Swarm",
                 "[PLAYER GETS 3X EVERYTHING]:",
-                "- 3x Max HP (300 Health)",
-                "- 3x Nanotech Med-Kits (6 Kits)",
+                "- 3x Max HP (300 Health) & Med-Kits",
+                "- Press 'T': SPLIT INTO 3 ATTACK SQUIRRELS",
+                "- Auto-splits into 3 on Boss Waves!",
                 "- 8-Clone Mirage Illusion on 'F'",
-                "- Tiers 3-5: HIGH-ENERGY LASER RAY",
-                "- Press 'L' to TOGGLE LASER DIRECTLY",
+                "- Continuous Lasers (Press 'L')",
+                "- Past Level 100: Endless Overdrive",
                 "",
                 ">> PRESS '1' OR CROSS (X) <<",
             ]
-            y_c1 = 210
+            y_c1 = 202
             for ln in lines1:
-                col = (100, 255, 150) if ">>" in ln else ((255, 215, 60) if "'L'" in ln or "'F'" in ln else ((255, 220, 100) if "3X" in ln else (210, 220, 235)))
-                screen.blit(font.render(ln, True, col), (75, y_c1))
-                y_c1 += 23
+                col = (100, 255, 150) if ">>" in ln else ((255, 215, 60) if "'T'" in ln or "'L'" in ln or "'F'" in ln else ((255, 220, 100) if "3X" in ln or "SPLIT" in ln else (210, 220, 235)))
+                screen.blit(font.render(ln, True, col), (70, y_c1))
+                y_c1 += 22
 
-            card2 = pygame.Rect(415, 155, 325, 310)
+            card2 = pygame.Rect(410, 150, 335, 325)
             pygame.draw.rect(screen, (18, 22, 38), card2, border_radius=12)
             pygame.draw.rect(screen, (0, 210, 255), card2, 2, border_radius=12)
 
-            screen.blit(big_font.render("2P DUEL (PVP)", True, (0, 220, 255)), (440, 175))
+            screen.blit(big_font.render("2P DUEL (PVP)", True, (0, 220, 255)), (435, 168))
             lines2 = [
                 "P1 (Squirrel) vs P2 (Viper)",
-                "[EQUAL BALANCED POWER]:",
+                "[EQUAL BALANCED COMBAT]:",
                 "- Equal 120 HP for both players",
-                "- Multi-Image Decoys each",
+                "- P1: Press 'T' to split into 3 units",
+                "- Multi-Image Decoys for both",
                 "- Tiers 3-5: LASER RAYS FOR BOTH",
                 "- 5-Round Milestone Dance Breaks",
                 "- P2 Burrow & Teleport Ambush",
                 "",
                 ">> PRESS '2' OR CIRCLE (O) <<",
             ]
-            y_c2 = 210
+            y_c2 = 202
             for ln in lines2:
                 col = (100, 255, 150) if ">>" in ln else ((0, 240, 255) if "EQUAL" in ln else (210, 220, 235))
-                screen.blit(font.render(ln, True, col), (430, y_c2))
-                y_c2 += 23
+                screen.blit(font.render(ln, True, col), (425, y_c2))
+                y_c2 += 22
 
             pad_msg = "PlayStation Gamepad Connected" if ps_pad_p1 else "Keyboard Connected"
             screen.blit(font.render(f"Controller: {pad_msg} | Esc to Switch Modes", True, (160, 170, 190)), (SCREEN_WIDTH // 2 - 190, 505))
@@ -693,6 +708,10 @@ async def main():
                         current_level += 1
                     p1_hp = min(p1_max_hp, p1_hp + 40)
                     campaign_enemies = spawn_campaign_wave(current_level)
+                    # Auto split into 3 squirrels on Boss Stages (Every 10th level)
+                    if current_level % 10 == 0:
+                        p1_split_timer = 500
+                        SFX.snd_split.play()
                 else:
                     game_state = "DUEL"
                     p1_hp = p1_max_hp
@@ -836,6 +855,9 @@ async def main():
                     p1_med_kits = min(6, p1_med_kits + 1)
                     p1_decoys = min(6, p1_decoys + 1)
                     campaign_enemies = spawn_campaign_wave(current_level)
+                    if current_level % 10 == 0:
+                        p1_split_timer = 500
+                        SFX.snd_split.play()
                 else:
                     game_state = "DUEL"
                     p1_hp = min(p1_max_hp, 120 + (30 if bonus_won_by == "P1" else 0))
@@ -864,6 +886,9 @@ async def main():
         center_p1_y = p1_y + 40
         p1_laser_active = False
         p2_laser_active = False
+
+        if p1_split_timer > 0:
+            p1_split_timer -= 1
 
         for dec in active_decoys[:]:
             dec["life"] -= 1
@@ -913,6 +938,12 @@ async def main():
             current_wpn = WEAPON_TIERS[p1_power_tier]
             is_firing = (mouse_buttons[0] or keys[pygame.K_SPACE] or pad_shoot) and not p1_guard
 
+            # Calculate positions for the 3 squirrels when Mitosis is active
+            squirrel_squad_origins = [(center_p1_x, center_p1_y)]
+            if p1_split_timer > 0:
+                squirrel_squad_origins.append((center_p1_x - 45, center_p1_y - 45))
+                squirrel_squad_origins.append((center_p1_x - 45, center_p1_y + 45))
+
             if current_wpn["type"] == "laser" and is_firing:
                 p1_laser_active = True
                 p1_laser_end_x = center_p1_x + math.cos(p1_aim_angle) * 900
@@ -925,9 +956,13 @@ async def main():
                     p1_x -= math.cos(p1_aim_angle) * 1.5
                     p1_y -= math.sin(p1_aim_angle) * 1.5
 
-                laser_dmg = current_wpn["dmg"] * (3 if game_state == "CAMPAIGN" else 1)
-                p1_dmg_box = pygame.Rect(min(center_p1_x, p1_laser_end_x), min(center_p1_y, p1_laser_end_y),
-                                         abs(p1_laser_end_x - center_p1_x) + 12, abs(p1_laser_end_y - center_p1_y) + 12)
+                mult = 3 if game_state == "CAMPAIGN" else 1
+                if p1_split_timer > 0:
+                    mult *= 2.5
+                laser_dmg = current_wpn["dmg"] * mult
+
+                p1_dmg_box = pygame.Rect(min(center_p1_x, p1_laser_end_x) - 40, min(center_p1_y, p1_laser_end_y) - 40,
+                                         abs(p1_laser_end_x - center_p1_x) + 80, abs(p1_laser_end_y - center_p1_y) + 80)
 
                 if game_state == "CAMPAIGN":
                     for e in campaign_enemies:
@@ -962,15 +997,16 @@ async def main():
                 if p1_shoot_cd > 0:
                     p1_shoot_cd -= 1
                 if is_firing and p1_shoot_cd == 0:
-                    p1_bullets.append({
-                        "x": center_p1_x, "y": center_p1_y,
-                        "vx": math.cos(p1_aim_angle) * current_wpn["speed"],
-                        "vy": math.sin(p1_aim_angle) * current_wpn["speed"],
-                        "radius": 6 + p1_power_tier,
-                        "dmg": p1_dmg,
-                        "color_outer": current_wpn["color_outer"],
-                        "color_core": current_wpn["color_core"],
-                    })
+                    for ox, oy in squirrel_squad_origins:
+                        p1_bullets.append({
+                            "x": ox, "y": oy,
+                            "vx": math.cos(p1_aim_angle) * current_wpn["speed"],
+                            "vy": math.sin(p1_aim_angle) * current_wpn["speed"],
+                            "radius": 6 + p1_power_tier,
+                            "dmg": p1_dmg,
+                            "color_outer": current_wpn["color_outer"],
+                            "color_core": current_wpn["color_core"],
+                        })
                     SFX.snd_shoot.play()
                     p1_shoot_cd = 12
 
@@ -1097,7 +1133,6 @@ async def main():
                     p2_pad_shoot = ps_pad_p2 and (ps_pad_p2.get_button(0) or ps_pad_p2.get_button(7))
                     p2_is_firing = (keys[pygame.K_KP0] or keys[pygame.K_RSHIFT] or p2_pad_shoot)
 
-                    # P2 Continuous Laser Ray
                     if p2_current_wpn["type"] == "laser" and p2_is_firing:
                         p2_laser_active = True
                         rad = math.radians(p2_angle)
@@ -1124,7 +1159,6 @@ async def main():
                             p2_power_tier += 1
                             floating_texts.append([f"P2 LASER TIER {p2_power_tier}!", center_p2_x - 40, center_p2_y - 30, (0, 240, 255), 40])
 
-                    # P2 Bullets
                     elif p2_current_wpn["type"] == "bullet":
                         if p2_shoot_cd > 0:
                             p2_shoot_cd -= 1
@@ -1210,6 +1244,14 @@ async def main():
             pygame.draw.line(screen, wpn["color_core"], (center_p1_x, center_p1_y), (p1_laser_end_x, p1_laser_end_y), wpn["beam_w"])
             pygame.draw.circle(screen, wpn["color_core"], (int(center_p1_x), int(center_p1_y)), wpn["beam_w"] + 4)
 
+            # Draw Clones Lasers if in Mitosis Mode
+            if p1_split_timer > 0:
+                for ox, oy in [(center_p1_x - 45, center_p1_y - 45), (center_p1_x - 45, center_p1_y + 45)]:
+                    lex = ox + math.cos(p1_aim_angle) * 900
+                    ley = oy + math.sin(p1_aim_angle) * 900
+                    pygame.draw.line(screen, wpn["color_outer"], (ox, oy), (lex, ley), wpn["beam_w"] + 4)
+                    pygame.draw.line(screen, (255, 255, 255), (ox, oy), (lex, ley), max(2, wpn["beam_w"] - 2))
+
         if p2_laser_active:
             wpn = WEAPON_TIERS[p2_power_tier]
             pygame.draw.line(screen, wpn["color_outer"], (center_p2_x, center_p2_y), (p2_laser_end_x, p2_laser_end_y), wpn["beam_w"] + 8)
@@ -1244,10 +1286,19 @@ async def main():
             else:
                 screen.blit(font.render(ft[0], True, ft[3]), (int(ft[1]), int(ft[2])))
 
-        # Draw Player 1
+        # Draw Player 1 & Active Mitosis Squad
         s_surf = pygame.transform.scale(create_squirrel_sprite(p1_guard, WEAPON_TIERS[p1_power_tier]["color_outer"]), (72 * scale, 60 * scale))
         if p1_hp > 0:
             screen.blit(s_surf, (p1_x, p1_y))
+
+            # Draw the 2 orbiting Combat Clones if Split Active
+            if p1_split_timer > 0:
+                c1_surf = pygame.transform.scale(create_squirrel_sprite(False, (255, 215, 60), alpha=210), (72 * scale, 60 * scale))
+                screen.blit(c1_surf, (p1_x - 45, p1_y - 45))
+                screen.blit(c1_surf, (p1_x - 45, p1_y + 45))
+                pygame.draw.line(screen, (255, 215, 60), (center_p1_x, center_p1_y), (center_p1_x - 45, center_p1_y - 45), 1)
+                pygame.draw.line(screen, (255, 215, 60), (center_p1_x, center_p1_y), (center_p1_x - 45, center_p1_y + 45), 1)
+
             if p1_guard:
                 pygame.draw.circle(screen, (0, 220, 255), (int(center_p1_x), int(center_p1_y)), 52, 3)
 
@@ -1286,8 +1337,12 @@ async def main():
         p1_title = "P1: S.Q.U.I.R.E.L. (3X POWER)" if game_state == "CAMPAIGN" else "P1: S.Q.U.I.R.E.L."
         screen.blit(font.render(p1_title, True, (255, 180, 80)), (20, 12))
         screen.blit(num_font.render(f"HP: {int(p1_hp)} / {p1_max_hp}", True, p1_col), (20, 30))
-        wpn_desc = f"PWR TIER {p1_power_tier}: {WEAPON_TIERS[p1_power_tier]['name']} (Press 'L' to toggle)"
+        wpn_desc = f"PWR TIER {p1_power_tier}: {WEAPON_TIERS[p1_power_tier]['name']} (Press 'L')"
         screen.blit(font.render(wpn_desc, True, WEAPON_TIERS[p1_power_tier]["color_outer"]), (20, 56))
+
+        # Split status display
+        split_stat = f"TRIPLE SQUAD ACTIVE ({p1_split_timer // 60}s)" if p1_split_timer > 0 else f"TRIPLE SPLIT [T]: {p1_split_charges} CHARGES"
+        screen.blit(font.render(split_stat, True, (255, 215, 60) if p1_split_charges > 0 else (120, 130, 150)), (20, 76))
 
         if game_state == "CAMPAIGN":
             lvl_col = (255, 60, 90) if current_level > 100 else (255, 230, 100)
