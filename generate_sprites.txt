@@ -1,0 +1,83 @@
+from pathlib import Path
+import pygame
+
+pygame.init()
+
+# Ensure the output directory matches main.py: assets/sprites
+sprite_dir = Path("assets/sprites")
+sprite_dir.mkdir(parents=True, exist_ok=True)
+
+
+def create_squirrel_sprite(tail_flag: bool = False) -> pygame.Surface:
+    """Draws Agent S.Q.U.I.R.E.L.: cyber-goggles, ears, body, and glowing neon tail."""
+    surf = pygame.Surface((44, 44), pygame.SRCALPHA)
+
+    tail_neon = (255, 140, 0)
+    tail_core = (255, 210, 80)
+    body_fur = (190, 85, 20)
+    chest_cream = (245, 200, 150)
+
+    # 1. Bushy curved neon tail
+    if tail_flag:
+        # Puffed tail raised high (teleport flag pose)
+        pygame.draw.circle(surf, tail_neon, (10, 14), 13)
+        pygame.draw.circle(surf, tail_core, (12, 12), 7)
+    else:
+        # Standard arched running tail
+        pygame.draw.ellipse(surf, tail_neon, (2, 12, 16, 24))
+        pygame.draw.ellipse(surf, tail_core, (6, 15, 10, 16))
+
+    # 2. Body & belly patch
+    pygame.draw.ellipse(surf, body_fur, (14, 16, 20, 22))
+    pygame.draw.ellipse(surf, chest_cream, (20, 20, 10, 14))
+
+    # 3. Head & pointed ears
+    pygame.draw.circle(surf, body_fur, (28, 16), 9)
+    pygame.draw.polygon(surf, body_fur, [(24, 9), (28, 3), (30, 9)])
+    pygame.draw.polygon(surf, (255, 180, 180), [(25, 8), (28, 5), (29, 8)])
+
+    # 4. Cyber Visor / Heat-vision goggles
+    pygame.draw.ellipse(surf, (0, 240, 255), (28, 14, 9, 5))
+    pygame.draw.circle(surf, (255, 255, 255), (32, 16), 1)
+
+    # 5. Snout & paws
+    pygame.draw.circle(surf, (40, 20, 20), (36, 18), 2)
+    pygame.draw.ellipse(surf, body_fur, (16, 36, 8, 5))
+    pygame.draw.ellipse(surf, body_fur, (26, 36, 8, 5))
+
+    return surf
+
+
+def create_viper_sprite() -> pygame.Surface:
+    """Draws V.I.P.E.R.: robotic serpent drone with thruster and cyan sensor lens."""
+    surf = pygame.Surface((50, 50), pygame.SRCALPHA)
+
+    chassis = (50, 60, 80)
+    neon_cyan = (0, 210, 255)
+    lens_glow = (200, 255, 255)
+
+    # 1. Rear hovering thruster & flame
+    pygame.draw.circle(surf, (30, 40, 55), (10, 25), 8)
+    pygame.draw.circle(surf, neon_cyan, (6, 25), 4)
+
+    # 2. Armored segment body
+    pygame.draw.ellipse(surf, chassis, (14, 15, 22, 20))
+    pygame.draw.ellipse(surf, neon_cyan, (18, 18, 14, 14), width=2)
+
+    # 3. Angular Viper Drone Head
+    head_polygon = [(26, 11), (48, 25), (26, 39), (32, 25)]
+    pygame.draw.polygon(surf, (65, 80, 105), head_polygon)
+    pygame.draw.polygon(surf, neon_cyan, head_polygon, width=2)
+
+    # 4. Slit sensor eye / Thermal tracking lens
+    pygame.draw.polygon(surf, lens_glow, [(36, 23), (45, 25), (36, 27)])
+
+    return surf
+
+
+if __name__ == "__main__":
+    # Generate and save the three images required by main.py
+    pygame.image.save(create_squirrel_sprite(tail_flag=False), sprite_dir / "squirrel.png")
+    pygame.image.save(create_squirrel_sprite(tail_flag=True), sprite_dir / "squirrel_tail_flag.png")
+    pygame.image.save(create_viper_sprite(), sprite_dir / "viper.png")
+    print("Sprites created successfully in assets/sprites/")
