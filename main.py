@@ -6,7 +6,7 @@ import asyncio
 from array import array
 import pygame
 
-GAME_VERSION = "v2 FAIR DUEL"
+GAME_VERSION = "v3 POWER-UPS"
 
 # ---------------------------------------------------------
 # 1. VIEWPORT & FULLSCREEN CONFIGURATION
@@ -37,6 +37,9 @@ HEIGHT = 720
 SHOT_SPEED = 12.0      # Squirrel laser and viper venom travel at the same speed
 HIT_RADIUS = 20        # Same hit size for squirrel body and viper head
 CONTACT_RADIUS = 30    # Squirrel and viper touching = both take a hit
+SHARD_BOOST = 1.25         # Picking up a shard: +25% attack...
+SHARD_BOOST_FRAMES = 600   # ...for 10 seconds (60 FPS), for whoever grabs it
+SHARD_SPAWN_FRAMES = 420   # A new shard appears every 7 seconds (max 2 on screen)
 
 # ---------------------------------------------------------
 # 2. LOCALSTORAGE HIGH SCORE
@@ -335,7 +338,17 @@ class Fighter:
         self.shot_timer = 0
         self.special_timer = 0
         self.contact_timer = 0
+        self.boost_timer = 0
         self.refill()
+
+    def power(self):
+        """Attack damage right now: +25% while a shard power-up is active (same rule for both sides)."""
+        return int(self.attack_power * SHARD_BOOST) if self.boost_timer > 0 else self.attack_power
+
+    def collect_shard(self):
+        self.boost_timer = SHARD_BOOST_FRAMES
+        self.defense = min(self.max_defense, self.defense + 30)
+        self.hp = min(self.max_hp, self.hp + 20)
 
     def refill(self):
         self.hp = self.max_hp
@@ -355,6 +368,8 @@ class Fighter:
             self.special_timer -= 1
         if self.contact_timer > 0:
             self.contact_timer -= 1
+        if self.boost_timer > 0:
+            self.boost_timer -= 1
 
     def try_shot(self):
         if self.hp <= 0 or self.shot_timer > 0:
@@ -469,7 +484,7 @@ class ViperEnemy(Fighter):
         if len(self.history) > max_h:
             self.history = self.history[:max_h]
 
-    def update_ai(self, targets, projectiles_list, spit_fn, burst_fn):
+    def update_ai(self, targets, projectiles_list, spit_fn, burst_fn, shards=()):
         self.slither_t += 0.14
         self.tick_timers()
         active_targets = [t for t in targets if t.hp > 0]
@@ -479,6 +494,14 @@ class ViperEnemy(Fighter):
         closest_target = min(active_targets, key=lambda t: math.hypot(t.x - self.x, t.y - self.y))
         tx, ty = closest_target.x, closest_target.y
         dist = math.hypot(tx - self.x, ty - self.y)
+
+        # Race the squirrel for power-up shards, just like a player would
+        move_x, move_y = tx, ty
+        if shards and self.boost_timer <= 0:
+            near = min(shards, key=lambda s: math.hypot(s.x - self.x, s.y - self.y))
+            d_s = math.hypot(near.x - self.x, near.y - self.y)
+            if d_s < 320 and d_s < dist:
+                move_x, move_y = near.x, near.y
 
         # Evade player lasers
         evade_x, evade_y = 0.0, 0.0
@@ -491,7 +514,7 @@ class ViperEnemy(Fighter):
                     break
 
         lunge = 1.35 if dist < 170 else 1.0
-        angle = math.atan2(ty - self.y, tx - self.x)
+        angle = math.atan2(move_y - self.y, move_x - self.x)
         wiggle = math.sin(self.slither_t) * 0.70
         self.heading = angle
 
@@ -577,6 +600,26 @@ async def main():
     music_key = None
     music_sound = None
     music_cache = {}
+    music_on = False   # background music is OFF by default; only attacks make sound (B toggles)
+
+    def refresh_music():
+        """Stops any background loop, then starts the right one only if music is switched on."""
+        nonlocal music_sound
+        if music_sound:
+            music_sound.stop()
+            music_sound = None
+        if not music_on or audio_muted:
+            return
+        key = (game_mode, sound_tier(level_state["level"]))
+        if key not in music_cache:
+            try:
+                music_cache[key] = build_music_loop(*key)
+            except Exception:
+                music_cache[key] = None
+        music_sound = music_cache[key]
+        if music_sound:
+            music_sound.set_volume(0.25)
+            music_sound.play(loops=-1)
 
     game_mode = 1  # 1: Solo vs AI, 2: Dual Squirrel vs AI, 3: Squirrel vs Viper
     level_state = {"level": 1, "kills": 0}
@@ -588,6 +631,7 @@ async def main():
     high_score = get_stored_high_score()
     pvp_wins = {"squirrel": 0, "viper": 0}
     banner = {"text": "", "timer": 0}
+    shard_clock = {"t": 0}
 
     shake_intensity = 0
     game_over = False
@@ -636,7 +680,7 @@ async def main():
     def squirrel_shot(p, tx, ty):
         if p.try_shot():
             color = (0, 255, 230) if p.player_id == 1 else (100, 220, 255)
-            projectiles.append(Projectile(p.x, p.y, tx, ty, damage=p.attack_power, color=color, is_hostile=False, owner=p))
+            projectiles.append(Projectile(p.x, p.y, tx, ty, damage=p.power(), color=color, is_hostile=False, owner=p))
             attack_sound("sq1_shot" if p.player_id == 1 else "sq2_shot")
 
     def squirrel_nova(p):
@@ -645,12 +689,12 @@ async def main():
             for angle in range(0, 360, 24):
                 rad = math.radians(angle)
                 projectiles.append(Projectile(p.x, p.y, p.x + math.cos(rad) * 200, p.y + math.sin(rad) * 200,
-                                              damage=p.attack_power, color=color, is_hostile=False, owner=p))
+                                              damage=p.power(), color=color, is_hostile=False, owner=p))
             attack_sound("sq1_nova" if p.player_id == 1 else "sq2_nova")
 
     def viper_spit(v, tx, ty):
         if v.try_shot():
-            projectiles.append(Projectile(v.x, v.y, tx, ty, damage=v.attack_power, color=(255, 60, 100), is_hostile=True, owner=v))
+            projectiles.append(Projectile(v.x, v.y, tx, ty, damage=v.power(), color=(255, 60, 100), is_hostile=True, owner=v))
             attack_sound("vp_spit")
 
     def viper_burst(v):
@@ -658,7 +702,7 @@ async def main():
             for angle in range(0, 360, 24):
                 rad = math.radians(angle)
                 projectiles.append(Projectile(v.x, v.y, v.x + math.cos(rad) * 200, v.y + math.sin(rad) * 200,
-                                              damage=v.attack_power, color=(255, 120, 60), is_hostile=True, owner=v))
+                                              damage=v.power(), color=(255, 120, 60), is_hostile=True, owner=v))
             attack_sound("vp_burst")
 
     def update_high_score(score):
@@ -704,25 +748,13 @@ async def main():
     while running:
         current_level = level_state["level"]
 
-        # Switch background music when mode or level tier changes
+        # Mode or level tier changed: pre-build attack tunes (and switch music if it's on)
         wanted_key = (game_mode, sound_tier(current_level))
         if wanted_key != music_key:
             music_key = wanted_key
-            if music_sound:
-                music_sound.stop()
-            if wanted_key not in music_cache:
-                try:
-                    music_cache[wanted_key] = build_music_loop(*wanted_key)
-                except Exception:
-                    music_cache[wanted_key] = None
-            music_sound = music_cache[wanted_key]
-            # Pre-build this mode/tier's attack tunes so the first shot doesn't stutter
             for tool in ATTACK_TUNES:
                 get_attack_sfx(tool, game_mode, current_level)
-            if music_sound:
-                music_sound.set_volume(0.35)
-                if not audio_muted:
-                    music_sound.play(loops=-1)
+            refresh_music()
 
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
@@ -730,11 +762,11 @@ async def main():
             elif event.type == pygame.KEYDOWN:
                 if event.key == pygame.K_m:
                     audio_muted = not audio_muted
-                    if music_sound:
-                        if audio_muted:
-                            music_sound.stop()
-                        else:
-                            music_sound.play(loops=-1)
+                    refresh_music()
+
+                elif event.key == pygame.K_b:
+                    music_on = not music_on
+                    refresh_music()
 
                 elif event.key == pygame.K_t:
                     game_mode = (game_mode % 3) + 1
@@ -826,21 +858,32 @@ async def main():
                     continue
                 for f in [p for p in players if p.hp > 0] + vipers:
                     if math.hypot(s.x - f.x, s.y - f.y) < 26:
-                        f.defense = min(f.max_defense, f.defense + 30)
-                        f.hp = min(f.max_hp, f.hp + 20)
+                        f.collect_shard()
                         if isinstance(f, SquirrelPlayer):
                             f.score += 100
                             update_high_score(f.score)
+                            who = f"SQUIRREL P{f.player_id}"
+                        else:
+                            who = "VIPER"
+                        show_banner(f"{who} POWER UP!  ATK {f.attack_power} -> {f.power()} for 10s")
+                        for _ in range(12):
+                            particles.append(Particle(f.x, f.y, (255, 230, 90)))
                         shards.remove(s)
                         play_sfx(snd_pickup)
                         break
+
+            # New shards appear regularly in every mode, anywhere in the middle of the arena
+            shard_clock["t"] += 1
+            if shard_clock["t"] >= SHARD_SPAWN_FRAMES and len(shards) < 2:
+                shard_clock["t"] = 0
+                shards.append(Shard(random.uniform(200, WIDTH - 200), random.uniform(150, HEIGHT - 150)))
 
             # Move vipers
             for viper in vipers:
                 if game_mode == 3:
                     viper.update_manual(keys[pygame.K_RIGHT] - keys[pygame.K_LEFT], keys[pygame.K_DOWN] - keys[pygame.K_UP])
                 else:
-                    viper.update_ai(players, projectiles, viper_spit, viper_burst)
+                    viper.update_ai(players, projectiles, viper_spit, viper_burst, shards)
 
             # Squirrel shots vs vipers (head = full damage, tail = half)
             for p in projectiles[:]:
@@ -885,8 +928,8 @@ async def main():
             for viper in vipers:
                 for ply in players:
                     if ply.hp > 0 and viper.contact_timer <= 0 and math.hypot(viper.x - ply.x, viper.y - ply.y) < CONTACT_RADIUS:
-                        ply.take_damage(viper.attack_power)
-                        viper.take_damage(ply.attack_power)
+                        ply.take_damage(viper.power())
+                        viper.take_damage(ply.power())
                         viper.last_hit_by = ply
                         viper.contact_timer = 40
                         attack_sound("vp_bite")
@@ -952,7 +995,8 @@ async def main():
             ready = 1.0 - (unit.special_timer / unit.special_cd)
             pygame.draw.rect(canvas, (25, 30, 20), (x, y + 30, 200, 8))
             pygame.draw.rect(canvas, (0, 255, 170) if unit.special_timer == 0 else (120, 160, 90), (x, y + 30, int(200 * ready), 8))
-            canvas.blit(font_hud_sm.render(f"ATK {unit.attack_power}", True, (255, 205, 50)), (x + 5, y + 40))
+            atk_txt = f"ATK {unit.power()}  POWER UP {unit.boost_timer // 60 + 1}s" if unit.boost_timer > 0 else f"ATK {unit.attack_power}"
+            canvas.blit(font_hud_sm.render(atk_txt, True, (255, 240, 120) if unit.boost_timer > 0 else (255, 205, 50)), (x + 5, y + 40))
 
         for i, p in enumerate(players):
             draw_panel(25, 20 + i * 60, f"SQUIRREL P{p.player_id}", p, (255, 110, 60) if p.player_id == 1 else (90, 170, 255))
@@ -974,9 +1018,9 @@ async def main():
             canvas.blit(b, b.get_rect(center=(WIDTH // 2, 70)))
 
         controls = {
-            1: "[P1: WASD move, SPACE/L-CLICK shoot, E/R-CLICK nova] [M: MUTE] [R: RESET] [T: MODE]",
-            2: "[P1: WASD+SPACE+E] [P2: ARROWS move, ENTER shoot, R-SHIFT nova] [M: MUTE] [T: MODE]",
-            3: "[SQUIRREL: WASD+SPACE+E] [VIPER: ARROWS move, ENTER/R-CTRL spit, R-SHIFT burst] [M: MUTE] [T: MODE]",
+            1: "[P1: WASD move, SPACE/L-CLICK shoot, E/R-CLICK nova] [M: MUTE] [B: MUSIC] [R: RESET] [T: MODE]",
+            2: "[P1: WASD+SPACE+E] [P2: ARROWS move, ENTER shoot, R-SHIFT nova] [M: MUTE] [B: MUSIC] [T: MODE]",
+            3: "[SQUIRREL: WASD+SPACE+E] [VIPER: ARROWS move, ENTER/R-CTRL spit, R-SHIFT burst] [M: MUTE] [B: MUSIC] [T: MODE]",
         }[game_mode]
         canvas.blit(font_hud.render(controls, True, (0, 215, 255)), (25, HEIGHT - 35))
         canvas.blit(font_hud_sm.render(GAME_VERSION, True, (120, 130, 160)), (WIDTH - 110, HEIGHT - 20))
