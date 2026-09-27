@@ -7,7 +7,7 @@ import asyncio
 from array import array
 import pygame
 
-GAME_VERSION = "v8 LEVEL JUMP"
+GAME_VERSION = "v9 VIPER PACKS"
 
 # ---------------------------------------------------------
 # 1. VIEWPORT & FULLSCREEN CONFIGURATION
@@ -359,15 +359,26 @@ def level_stats(level):
 def fighter_speed(level):
     return 6.8 + min(3.0, (max(1, level) - 1) * 0.06)
 
+MAX_VIPERS_ON_SCREEN = 10
+
+def pack_size(level, squirrels=1):
+    """Vipers per squirrel: 1 at levels 1-5, 2 at 6-10, 3 at 11-15 ... (the original growth),
+    capped so there are never more than 10 vipers on screen in total."""
+    grow = 1 + (max(1, level) - 1) // 5
+    return max(1, min(grow, MAX_VIPERS_ON_SCREEN // max(1, squirrels)))
+
 class Fighter:
     """Everything combat-related lives here, so squirrel and viper can never drift apart."""
 
-    def apply_level_up(self, level):
+    def apply_level_up(self, level, power_mult=1):
+        """power_mult: a squirrel facing a pack of N vipers gets N x HP, DEF and ATK,
+        so both sides always have the same total strength."""
         self.level = max(1, level)
+        self.power_mult = max(1, power_mult)
         s = level_stats(self.level)
-        self.max_hp = s["max_hp"]
-        self.max_defense = s["max_defense"]
-        self.attack_power = s["attack_power"]
+        self.max_hp = s["max_hp"] * self.power_mult
+        self.max_defense = s["max_defense"] * self.power_mult
+        self.attack_power = s["attack_power"] * self.power_mult
         self.shot_cd = s["shot_cd"]
         self.special_cd = s["special_cd"]
         self.shot_timer = 0
@@ -432,8 +443,8 @@ class SquirrelPlayer(Fighter):
         self.anim_t = 0.0
         self.apply_level_up(level)
 
-    def apply_level_up(self, level):
-        super().apply_level_up(level)
+    def apply_level_up(self, level, power_mult=1):
+        super().apply_level_up(level, power_mult)
         self.speed = fighter_speed(self.level)
 
     def move(self, dx, dy):
@@ -642,6 +653,7 @@ async def main():
     shard_clock = {"t": 0}
 
     shake_intensity = 0
+    show_help = True   # the game opens on the "how to play / all keys" screen (H shows it again)
     game_over = False
 
     def show_banner(text):
@@ -665,15 +677,16 @@ async def main():
         stop_all_sound()
         level = max(1, level)
         level_state["level"] = level
+        pack = pack_size(level, len(players))
         for p in players:
-            p.apply_level_up(level)
+            p.apply_level_up(level, power_mult=pack)
             if game_mode == 3:
                 p.x, p.y = 220.0, float(HEIGHT // 2)
         vipers.clear()
         projectiles.clear()
         shards.clear()
         s = level_stats(level)
-        show_banner(message or f"LEVEL {level}  |  SQUIRREL = VIPER   HP {s['max_hp']}   DEF {s['max_defense']}   ATK {s['attack_power']}")
+        show_banner(message or f"LEVEL {level}  |  {pack} VIPER{'S' if pack > 1 else ''} PER SQUIRREL  |  SQUIRREL POWER x{pack}  =  {pack} x VIPER (HP {s['max_hp']} DEF {s['max_defense']} ATK {s['attack_power']})")
 
     def reset_game(level):
         nonlocal game_over
@@ -682,9 +695,34 @@ async def main():
         start_level(level)
         game_over = False
 
-    def viper_target_count():
-        # One viper per living squirrel: never outnumbered
-        return 1 if game_mode == 3 else max(1, sum(1 for p in players if p.hp > 0))
+    def spawn_wave():
+        """A full pack for every living squirrel. The squirrel's power multiplier matches the pack size."""
+        pack = pack_size(level_state["level"], len(players))
+        alive = max(1, sum(1 for p in players if p.hp > 0))
+        total = pack if game_mode == 3 else pack * alive
+        for i in range(total):
+            if game_mode == 3 and i == 0:
+                # PvP: player 2 steers the pack leader; the rest of the pack is AI
+                vipers.append(ViperEnemy(level=level_state["level"], is_player_controlled=True, spawn=(WIDTH - 220, HEIGHT // 2)))
+            elif game_mode == 3:
+                vipers.append(ViperEnemy(level=level_state["level"], spawn=(WIDTH + 60, random.uniform(80, HEIGHT - 80))))
+            else:
+                vipers.append(ViperEnemy(level=level_state["level"]))
+
+    def pvp_viper():
+        """The viper player 2 is steering right now (None if the pack is gone)."""
+        for v in vipers:
+            if v.is_player_controlled:
+                return v
+        return None
+
+    def promote_pvp_leader():
+        # PvP: if player 2's viper falls, control jumps to the next viper in the pack
+        if game_mode == 3 and vipers and pvp_viper() is None:
+            nxt = vipers[0]
+            nxt.is_player_controlled = True
+            nxt.base_speed = fighter_speed(nxt.level)
+            show_banner("PLAYER 2 NOW CONTROLS THE NEXT VIPER IN THE PACK")
 
     def squirrel_shot(p, tx, ty):
         if p.try_shot():
@@ -723,7 +761,7 @@ async def main():
     def pvp_round_over(winner):
         pvp_wins[winner] += 1
         start_level(level_state["level"] + 1,
-                    f"{winner.upper()} WINS THE ROUND!  NEXT: LEVEL {level_state['level'] + 1}  (both refilled, equal stats)")
+                    f"{winner.upper()} WINS THE ROUND!  NEXT: LEVEL {level_state['level'] + 1}  (both sides refilled, equal total power)")
 
     def viper_defeated(viper):
         if viper in vipers:
@@ -731,7 +769,10 @@ async def main():
         for _ in range(16):
             particles.append(Particle(viper.x, viper.y, (60, 220, 90)))
         if game_mode == 3:
-            pvp_round_over("squirrel")
+            if not vipers:
+                pvp_round_over("squirrel")      # whole pack beaten
+            else:
+                promote_pvp_leader()
             return
         if random.random() < 0.40:
             shards.append(Shard(viper.x, viper.y))
@@ -742,11 +783,11 @@ async def main():
         level_state["kills"] += 1
         if level_state["kills"] % 5 == 0:
             start_level(level_state["level"] + 1)
-        else:
-            # Fair fights: the next duel starts with everyone back at full strength
-            for f in players + vipers:
-                if f.hp > 0:
-                    f.refill()
+        elif not vipers:
+            # Wave cleared: everyone alive refills before the next full pack arrives
+            for p in players:
+                if p.hp > 0:
+                    p.refill()
 
     reset_game(1)
 
@@ -768,6 +809,94 @@ async def main():
         hint = font_hud_sm.render("keys 1-9 = LV 10-90, 0 = LV 100, [ ] = -/+10", True, (160, 170, 200))
         canvas.blit(hint, hint.get_rect(center=((level_buttons[0][1].x + level_buttons[-1][1].right) // 2, HEIGHT - 76)))
 
+    font_help_title = pygame.font.SysFont("arial", 34, bold=True)
+    font_help_head = pygame.font.SysFont("consolas", 17, bold=True)
+    font_help = pygame.font.SysFont("consolas", 14, bold=True)
+
+    HELP_CONTROLS = [
+        ("SQUIRREL  (Player 1, every mode)", None),
+        ("W A S D", "move"),
+        ("SPACE / LEFT CLICK", "laser shot (aim with the mouse)"),
+        ("E / RIGHT CLICK", "Nova ring attack (special)"),
+        ("SQUIRREL 2  (Dual mode)", None),
+        ("ARROW KEYS", "move"),
+        ("ENTER / RIGHT CTRL", "blaster shot"),
+        ("RIGHT SHIFT", "Nova ring attack"),
+        ("VIPER  (Player 2, Squirrel vs Viper)", None),
+        ("ARROW KEYS", "move the lead viper"),
+        ("ENTER / RIGHT CTRL", "venom spit (straight ahead)"),
+        ("RIGHT SHIFT", "venom burst (special)"),
+        ("GAME", None),
+        ("T", "change mode   |   R  restart   |   M  mute"),
+        ("H", "show this screen again"),
+        ("LEVEL JUMP", None),
+        ("1 - 9", "jump to level 10, 20 ... 90"),
+        ("0", "jump to level 100"),
+        ("]  or  PAGE UP", "next level ending in 0 (23 -> 30)"),
+        ("[  or  PAGE DOWN", "previous one (23 -> 20)"),
+        ("CLICK  LV 1 ... LV 100", "buttons at the bottom of the screen"),
+    ]
+    HELP_RULES = [
+        "EQUAL POWER",
+        "- Squirrel and viper use the SAME level stats:",
+        "  HP, defense, attack, fire rate and special.",
+        "- More vipers come at higher levels: 1 per squirrel",
+        "  at levels 1-5, +1 every 5 levels (max 10 on screen).",
+        "- Each squirrel gets power x pack size:",
+        "  3 vipers -> squirrel has 3x HP, 3x DEF, 3x ATK.",
+        "  So both sides always have the same total strength.",
+        "",
+        "PLAYING",
+        "- Kill 5 vipers = next level (everyone refills).",
+        "- Beat the whole pack = everyone refills, new pack.",
+        "- Touching: squirrel AND viper both take damage.",
+        "- Green gems every 7s: +25% attack for 10s plus",
+        "  HP/DEF. Vipers can grab them too!",
+        "- Squirrel vs Viper: beat the whole pack to win the",
+        "  round; if P2's viper falls, P2 takes the next one.",
+        "",
+        "SOUND",
+        "- Only attacks make sound. Every attack has its own",
+        "  tune, different in each mode and every 3 levels.",
+    ]
+
+    def draw_help_screen(current_level):
+        overlay = pygame.Surface((WIDTH, HEIGHT), pygame.SRCALPHA)
+        overlay.fill((6, 8, 18, 238))
+        canvas.blit(overlay, (0, 0))
+        title = font_help_title.render("MODIS NEONTAIL  -  SQUIRREL vs VIPER", True, (255, 205, 50))
+        canvas.blit(title, title.get_rect(center=(WIDTH // 2, 34)))
+        mode_names = {1: "SOLO vs AI", 2: "DUAL SQUIRREL vs AI", 3: "SQUIRREL vs VIPER (2 players)"}
+        m = font_help_head.render(f"MODE:  {mode_names[game_mode]}   (press T to change)      LEVEL: {current_level}", True, (0, 255, 220))
+        canvas.blit(m, m.get_rect(center=(WIDTH // 2, 70)))
+
+        # Left column: every key
+        x, y = 50, 100
+        canvas.blit(font_help_head.render("ALL KEYS", True, (255, 205, 50)), (x, y))
+        y += 26
+        for key, what in HELP_CONTROLS:
+            if what is None:
+                y += 4
+                canvas.blit(font_help.render(key, True, (120, 200, 255)), (x, y))
+            else:
+                canvas.blit(font_help.render(key, True, (255, 255, 255)), (x + 12, y))
+                canvas.blit(font_help.render(what, True, (190, 200, 220)), (x + 230, y))
+            y += 21
+
+        # Right column: how it works
+        x, y = 690, 100
+        canvas.blit(font_help_head.render("HOW IT WORKS", True, (255, 205, 50)), (x, y))
+        y += 26
+        for line in HELP_RULES:
+            heading = line and not line.startswith(("-", " "))
+            col = (120, 200, 255) if heading else (190, 200, 220)
+            if line:
+                canvas.blit(font_help.render(line, True, col), (x, y))
+            y += 21
+
+        go = font_help_head.render("PRESS ENTER / SPACE OR CLICK TO START", True, (80, 255, 120))
+        canvas.blit(go, go.get_rect(center=(WIDTH // 2, HEIGHT - 28)))
+
     running = True
     while running:
         current_level = level_state["level"]
@@ -782,11 +911,28 @@ async def main():
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
                 running = False
+
+            # Start / help screen: T changes mode, M mutes, anything else starts the game
+            elif show_help and event.type in (pygame.KEYDOWN, pygame.MOUSEBUTTONDOWN):
+                if event.type == pygame.KEYDOWN and event.key == pygame.K_t:
+                    game_mode = (game_mode % 3) + 1
+                    pvp_wins["squirrel"] = pvp_wins["viper"] = 0
+                    reset_game(current_level)
+                elif event.type == pygame.KEYDOWN and event.key == pygame.K_m:
+                    audio_muted = not audio_muted
+                    if audio_muted:
+                        stop_all_sound()
+                else:
+                    show_help = False
+
             elif event.type == pygame.KEYDOWN:
                 if event.key == pygame.K_m:
                     audio_muted = not audio_muted
                     if audio_muted:
                         stop_all_sound()
+
+                elif event.key == pygame.K_h:
+                    show_help = True
 
                 elif event.key == pygame.K_t:
                     game_mode = (game_mode % 3) + 1
@@ -824,12 +970,13 @@ async def main():
 
                 # PvP viper (arrows + RCTRL/ENTER spit in its heading + RSHIFT burst)
                 elif game_mode == 3 and event.key in (pygame.K_RCTRL, pygame.K_KP0, pygame.K_RETURN):
-                    if vipers:
-                        v = vipers[0]
+                    v = pvp_viper()
+                    if v:
                         viper_spit(v, v.x + math.cos(v.heading) * 150, v.y + math.sin(v.heading) * 150)
                 elif game_mode == 3 and event.key == pygame.K_RSHIFT:
-                    if vipers:
-                        viper_burst(vipers[0])
+                    v = pvp_viper()
+                    if v:
+                        viper_burst(v)
 
                 elif event.key == pygame.K_SPACE:
                     mx, my = pygame.mouse.get_pos()
@@ -852,7 +999,7 @@ async def main():
                 elif event.button == 3:
                     squirrel_nova(players[0])
 
-        if not game_over:
+        if not game_over and not show_help:
             keys = pygame.key.get_pressed()
 
             # P1 Controls (WASD)
@@ -865,12 +1012,9 @@ async def main():
                 players[1].move(keys[pygame.K_RIGHT] - keys[pygame.K_LEFT], keys[pygame.K_DOWN] - keys[pygame.K_UP])
                 players[1].update()
 
-            # Spawn vipers at exactly the same level/stats as the squirrels
-            while len(vipers) < viper_target_count():
-                if game_mode == 3:
-                    vipers.append(ViperEnemy(level=level_state["level"], is_player_controlled=True, spawn=(WIDTH - 220, HEIGHT // 2)))
-                else:
-                    vipers.append(ViperEnemy(level=level_state["level"]))
+            # Next wave: a full viper pack per squirrel (squirrel power already matches the pack)
+            if not vipers:
+                spawn_wave()
 
             for p in projectiles[:]:
                 p.update()
@@ -911,7 +1055,7 @@ async def main():
 
             # Move vipers
             for viper in vipers:
-                if game_mode == 3:
+                if game_mode == 3 and viper.is_player_controlled:
                     viper.update_manual(keys[pygame.K_RIGHT] - keys[pygame.K_LEFT], keys[pygame.K_DOWN] - keys[pygame.K_UP])
                 else:
                     viper.update_ai(players, projectiles, viper_spit, viper_burst, shards)
@@ -1029,9 +1173,13 @@ async def main():
             canvas.blit(font_hud_sm.render(atk_txt, True, (255, 240, 120) if unit.boost_timer > 0 else (255, 205, 50)), (x + 5, y + 40))
 
         for i, p in enumerate(players):
-            draw_panel(25, 20 + i * 60, f"SQUIRREL P{p.player_id}", p, (255, 110, 60) if p.player_id == 1 else (90, 170, 255))
-        for i, v in enumerate(vipers[:2]):
+            draw_panel(25, 20 + i * 60, f"SQUIRREL P{p.player_id} x{p.power_mult}", p, (255, 110, 60) if p.player_id == 1 else (90, 170, 255))
+        shown = sorted(vipers, key=lambda v: not v.is_player_controlled)[:2]
+        for i, v in enumerate(shown):
             draw_panel(WIDTH - 225, 20 + i * 60, "VIPER" + (" (P2)" if v.is_player_controlled else " AI"), v, (80, 220, 110))
+        if len(vipers) > 2:
+            more = font_hud_sm.render(f"+ {len(vipers) - 2} more vipers in the pack", True, (160, 230, 170))
+            canvas.blit(more, (WIDTH - 225, 20 + 2 * 60))
 
         mode_names = {1: "SOLO vs AI", 2: "DUAL SQUIRREL vs AI", 3: "SQUIRREL vs VIPER (PVP)"}
         top = font_hud.render(f"LEVEL {current_level}  |  {mode_names[game_mode]}  [T: SWITCH]", True, (255, 205, 50))
@@ -1044,21 +1192,26 @@ async def main():
 
         # Power comparison: squirrel vs viper at this level (always equal base power)
         s_now = level_stats(current_level)
-        pw = font_hud.render(f"VIPERS: {len(vipers)}   |   POWER  SQUIRREL = VIPER   HP {s_now['max_hp']}  DEF {s_now['max_defense']}  ATK {s_now['attack_power']}",
+        pack_now = pack_size(current_level, len(players))
+        pw = font_hud.render(f"VIPERS: {len(vipers)}   |   PACK: {pack_now} VIPER{'S' if pack_now > 1 else ''} PER SQUIRREL   |   SQUIRREL POWER x{pack_now}",
                              True, (80, 255, 120))
         canvas.blit(pw, pw.get_rect(center=(WIDTH // 2, 62)))
+        pw2 = font_hud_sm.render(f"EACH VIPER: HP {s_now['max_hp']}  DEF {s_now['max_defense']}  ATK {s_now['attack_power']}      =      "
+                                 f"SQUIRREL x{pack_now}: HP {s_now['max_hp'] * pack_now}  DEF {s_now['max_defense'] * pack_now}  ATK {s_now['attack_power'] * pack_now}",
+                                 True, (170, 255, 190))
+        canvas.blit(pw2, pw2.get_rect(center=(WIDTH // 2, 80)))
 
         if banner["timer"] > 0:
             banner["timer"] -= 1
             b = font_hud.render(banner["text"], True, (255, 230, 90))
-            canvas.blit(b, b.get_rect(center=(WIDTH // 2, 86)))
+            canvas.blit(b, b.get_rect(center=(WIDTH // 2, 102)))
 
         draw_level_bar(current_level)
 
         controls = {
-            1: "[P1: WASD move, SPACE/L-CLICK shoot, E/R-CLICK nova] [M: MUTE] [R: RESET] [T: MODE]",
-            2: "[P1: WASD+SPACE+E] [P2: ARROWS move, ENTER shoot, R-SHIFT nova] [M: MUTE] [T: MODE]",
-            3: "[SQUIRREL: WASD+SPACE+E] [VIPER: ARROWS move, ENTER/R-CTRL spit, R-SHIFT burst] [M: MUTE] [T: MODE]",
+            1: "[P1: WASD move, SPACE/L-CLICK shoot, E/R-CLICK nova] [M: MUTE] [R: RESET] [T: MODE] [H: HELP]",
+            2: "[P1: WASD+SPACE+E] [P2: ARROWS move, ENTER shoot, R-SHIFT nova] [M: MUTE] [T: MODE] [H: HELP]",
+            3: "[SQUIRREL: WASD+SPACE+E] [VIPER: ARROWS move, ENTER/R-CTRL spit, R-SHIFT burst] [M: MUTE] [T: MODE] [H: HELP]",
         }[game_mode]
         canvas.blit(font_hud.render(controls, True, (0, 215, 255)), (25, HEIGHT - 35))
         canvas.blit(font_hud_sm.render(GAME_VERSION, True, (120, 130, 160)), (WIDTH - 110, HEIGHT - 20))
@@ -1074,6 +1227,9 @@ async def main():
             canvas.blit(txt_stats, txt_stats.get_rect(center=(WIDTH // 2, HEIGHT // 2 + 15)))
             canvas.blit(txt_restart, txt_restart.get_rect(center=(WIDTH // 2, HEIGHT // 2 + 55)))
             draw_level_bar(current_level)
+
+        if show_help:
+            draw_help_screen(current_level)
 
         ox, oy = 0, 0
         if shake_intensity > 0:
