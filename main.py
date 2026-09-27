@@ -7,7 +7,7 @@ import asyncio
 from array import array
 import pygame
 
-GAME_VERSION = "v10 CONTROLLERS"
+GAME_VERSION = "v11 FULL FIREPOWER"
 
 # ---------------------------------------------------------
 # 1. VIEWPORT & FULLSCREEN CONFIGURATION
@@ -304,6 +304,14 @@ class Projectile:
             self.alive = False
 
     def draw(self, surface):
+        if not self.is_hostile:
+            # Squirrel laser: a bright beam with a white-hot core
+            tail = (int(self.x - self.vx * 1.6), int(self.y - self.vy * 1.6))
+            head = (int(self.x), int(self.y))
+            pygame.draw.line(surface, self.color, tail, head, 6)
+            pygame.draw.line(surface, (255, 255, 255), tail, head, 2)
+            pygame.draw.circle(surface, (255, 255, 255), head, 3)
+            return
         pygame.draw.circle(surface, self.color, (int(self.x), int(self.y)), 6)
         pygame.draw.circle(surface, (255, 255, 255), (int(self.x), int(self.y)), 3)
 
@@ -729,6 +737,16 @@ async def main():
             return e.x, e.y
         return unit.x + math.cos(fallback_angle) * 200, unit.y + math.sin(fallback_angle) * 200
 
+    def pad_held(role):
+        """True while the shoot button (A / X) is held on that role's controller."""
+        j = pad_for(role)
+        if j is None:
+            return False
+        try:
+            return any(j.get_button(b) for b in PAD_SHOOT if b < j.get_numbuttons())
+        except Exception:
+            return False
+
     def add_input(a, b):
         return max(-1.0, min(1.0, a + b))
 
@@ -801,18 +819,30 @@ async def main():
             show_banner("PLAYER 2 NOW CONTROLS THE NEXT VIPER IN THE PACK")
 
     def squirrel_shot(p, tx, ty):
+        """A squirrel with xN power fires N laser beams in a fan - the same ammo as N vipers,
+        each beam hitting as hard as one viper's spit (so total damage stays equal)."""
         if p.try_shot():
             color = (0, 255, 230) if p.player_id == 1 else (100, 220, 255)
-            projectiles.append(Projectile(p.x, p.y, tx, ty, damage=p.power(), color=color, is_hostile=False, owner=p))
+            beams = max(1, p.power_mult)
+            dmg = max(1, p.power() // beams)
+            aim = math.atan2(ty - p.y, tx - p.x)
+            spread = math.radians(min(48.0, 6.0 * (beams - 1)))
+            for i in range(beams):
+                a = aim if beams == 1 else aim - spread / 2 + spread * i / (beams - 1)
+                projectiles.append(Projectile(p.x, p.y, p.x + math.cos(a) * 200, p.y + math.sin(a) * 200,
+                                              damage=dmg, color=color, is_hostile=False, owner=p))
             attack_sound("sq1_shot" if p.player_id == 1 else "sq2_shot")
 
     def squirrel_nova(p):
+        """Nova ring: 15 shots per power level (x3 squirrel = 45-shot ring), like N vipers bursting."""
         if p.try_special():
             color = (0, 255, 230) if p.player_id == 1 else (100, 220, 255)
-            for angle in range(0, 360, 24):
-                rad = math.radians(angle)
+            count = 15 * max(1, p.power_mult)
+            dmg = max(1, p.power() // max(1, p.power_mult))
+            for i in range(count):
+                rad = math.radians(i * 360.0 / count)
                 projectiles.append(Projectile(p.x, p.y, p.x + math.cos(rad) * 200, p.y + math.sin(rad) * 200,
-                                              damage=p.power(), color=color, is_hostile=False, owner=p))
+                                              damage=dmg, color=color, is_hostile=False, owner=p))
             attack_sound("sq1_nova" if p.player_id == 1 else "sq2_nova")
 
     def viper_spit(v, tx, ty):
@@ -892,7 +922,7 @@ async def main():
     HELP_CONTROLS = [
         ("SQUIRREL  (Player 1, every mode)", None),
         ("W A S D", "move"),
-        ("SPACE / LEFT CLICK", "laser shot (aim with the mouse)"),
+        ("SPACE / LEFT CLICK", "laser (aim with mouse, HOLD to keep firing)"),
         ("E / RIGHT CLICK", "Nova ring attack (special)"),
         ("SQUIRREL 2 (Dual)  /  VIPER (Player 2, Sqrl vs Viper)", None),
         ("ARROW KEYS", "move (the viper player steers the lead viper)"),
@@ -900,7 +930,7 @@ async def main():
         ("RIGHT SHIFT", "squirrel Nova  /  viper venom burst"),
         ("GAME CONTROLLER  (pad 1 = Squirrel, pad 2 = Squirrel 2 / Viper)", None),
         ("LEFT STICK / D-PAD", "move"),
-        ("A / X", "shoot (right stick aims)"),
+        ("A / X", "shoot, hold to keep firing (right stick aims)"),
         ("B / Y / LB / RB", "special: Nova / venom burst"),
         ("START", "start the game / show this screen"),
         ("GAME", None),
@@ -917,7 +947,8 @@ async def main():
         "- More vipers come at higher levels: 1 per squirrel",
         "  at levels 1-5, +1 every 5 levels (max 10 on screen).",
         "- Each squirrel gets power x pack size:",
-        "  3 vipers -> squirrel has 3x HP, 3x DEF, 3x ATK.",
+        "  3 vipers -> squirrel has 3x HP, 3x DEF and fires",
+        "  3 lasers at once + a 3x bigger Nova ring.",
         "  So both sides always have the same total strength.",
         "",
         "PLAYING",
@@ -1135,6 +1166,33 @@ async def main():
                 jx, jy = pad_move("p2")
                 players[1].move(add_input(keys[pygame.K_RIGHT] - keys[pygame.K_LEFT], jx), add_input(keys[pygame.K_DOWN] - keys[pygame.K_UP], jy))
                 players[1].update()
+
+            # Hold to keep firing (keyboard, mouse or controller A) - the fire rate limit still applies
+            mouse_on_bar = any(r.collidepoint(pygame.mouse.get_pos()) for _, r in level_buttons)
+            if players[0].hp > 0 and (keys[pygame.K_SPACE] or (pygame.mouse.get_pressed()[0] and not mouse_on_bar) or pad_held("p1")):
+                j = pad_for("p1")
+                if j is not None and pad_held("p1"):
+                    tx, ty = pad_aim(j, players[0], vipers, players[0].aim_angle)
+                else:
+                    tx, ty = pygame.mouse.get_pos()
+                squirrel_shot(players[0], tx, ty)
+            if game_mode == 2 and len(players) > 1 and players[1].hp > 0 and (keys[pygame.K_RETURN] or keys[pygame.K_RCTRL] or pad_held("p2")):
+                p2 = players[1]
+                j = pad_for("p2")
+                if j is not None and pad_held("p2"):
+                    tx, ty = pad_aim(j, p2, vipers, p2.aim_angle)
+                else:
+                    tx, ty = p2.x + (150 if p2.facing_right else -150), p2.y
+                squirrel_shot(p2, tx, ty)
+            if game_mode == 3 and (keys[pygame.K_RETURN] or keys[pygame.K_RCTRL] or keys[pygame.K_KP0] or pad_held("viper")):
+                v = pvp_viper()
+                if v:
+                    j = pad_for("viper")
+                    if j is not None and pad_held("viper"):
+                        tx, ty = pad_aim(j, v, players, v.heading)
+                    else:
+                        tx, ty = v.x + math.cos(v.heading) * 150, v.y + math.sin(v.heading) * 150
+                    viper_spit(v, tx, ty)
 
             # Next wave: a full viper pack per squirrel (squirrel power already matches the pack)
             if not vipers:
