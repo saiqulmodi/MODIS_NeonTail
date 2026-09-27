@@ -122,7 +122,7 @@ class BarricadeWall:
 class BunkerRoom:
     def __init__(self, rect: pygame.Rect):
         self.rect = rect
-        door_w = 48
+        door_w = 54
         mid_x = rect.x + rect.width // 2
         self.walls = [
             pygame.Rect(rect.x, rect.y, (rect.width - door_w) // 2, 6),
@@ -148,18 +148,17 @@ class BunkerRoom:
             pygame.draw.rect(surface, accent, w, width=2, border_radius=2)
 
 # ==============================================================================
-# SPRITE GENERATION (HALF SIZE BODY, GROWING NEON TAIL)
+# SPRITE GENERATION
 # ==============================================================================
 def create_squirrel_sprite(tail_scale: float = 0.0, tail_flag: bool = False, aura_color=None, alpha: int = 255) -> pygame.Surface:
-    surf = pygame.Surface((120, 70), pygame.SRCALPHA)
+    surf = pygame.Surface((130, 75), pygame.SRCALPHA)
     t_col = aura_color if aura_color else (255, 140, 0)
     
-    # Squirrel Tail: Peak at level 10 is double the body size (~56x44 px)
     if tail_scale > 0.02:
-        tw = int(56 * tail_scale)
-        th = int(44 * tail_scale)
-        tx = int(60 - tw)
-        ty = int(35 - th // 2)
+        tw = int(58 * tail_scale)
+        th = int(46 * tail_scale)
+        tx = int(62 - tw)
+        ty = int(37 - th // 2)
         pygame.draw.ellipse(surf, (*t_col, min(255, alpha)), (tx, ty, tw, th))
         if tw > 12 and th > 12:
             pygame.draw.ellipse(surf, (255, 215, 60, min(255, alpha)), (tx + 4, ty + 4, max(4, tw - 8), max(4, th - 8)))
@@ -167,37 +166,31 @@ def create_squirrel_sprite(tail_scale: float = 0.0, tail_flag: bool = False, aur
         if tail_flag:
             pygame.draw.ellipse(surf, (0, 240, 255, 200), (tx - 2, ty - 2, tw + 4, th + 4), width=2)
 
-    # Squirrel Body: Half size (~28x22 px) centered at x=60, y=24
     body_fur = (195, 85, 20)
-    pygame.draw.ellipse(surf, (*body_fur, alpha), (60, 24, 28, 22))
-    pygame.draw.ellipse(surf, (245, 205, 150, alpha), (68, 27, 14, 15))
-    pygame.draw.circle(surf, (*body_fur, alpha), (85, 29), 9)
-    pygame.draw.polygon(surf, (*body_fur, alpha), [(81, 21), (85, 14), (89, 21)])
-    pygame.draw.ellipse(surf, (0, 240, 255, alpha), (85, 27, 6, 4))
-    pygame.draw.circle(surf, (255, 255, 255, alpha), (87, 28), 1)
+    pygame.draw.ellipse(surf, (*body_fur, alpha), (62, 26, 28, 22))
+    pygame.draw.ellipse(surf, (245, 205, 150, alpha), (70, 29, 14, 15))
+    pygame.draw.circle(surf, (*body_fur, alpha), (87, 31), 9)
+    pygame.draw.polygon(surf, (*body_fur, alpha), [(83, 23), (87, 15), (91, 23)])
+    pygame.draw.ellipse(surf, (0, 240, 255, alpha), (87, 29, 6, 4))
+    pygame.draw.circle(surf, (255, 255, 255, alpha), (89, 30), 1)
 
     return surf
 
 def create_viper_head(is_boss: bool = False, flash_white: bool = False, alpha: int = 255) -> pygame.Surface:
-    """Clear, high-visibility cyber snake head oriented pointing RIGHT (0 degrees)."""
     surf = pygame.Surface((58, 42), pygame.SRCALPHA)
     accent = (255, 255, 255) if flash_white else ((255, 45, 85) if is_boss else (0, 230, 255))
     core_dark = (240, 240, 255) if flash_white else ((80, 25, 40) if is_boss else (30, 48, 75))
     core_light = (255, 255, 255) if flash_white else ((120, 35, 55) if is_boss else (55, 85, 125))
 
-    # Flared Cobra Hood / Crest
     pygame.draw.polygon(surf, (*core_dark, alpha), [(4, 21), (20, 4), (36, 12), (54, 21), (36, 30), (20, 38)])
     pygame.draw.polygon(surf, (*core_light, alpha), [(14, 21), (24, 10), (38, 16), (50, 21), (38, 26), (24, 32)])
     pygame.draw.polygon(surf, (*accent, alpha), [(4, 21), (20, 4), (36, 12), (54, 21), (36, 30), (20, 38)], width=2)
 
-    # Dual Glowing Sensor Eyes
     eye_col = (255, 255, 255) if flash_white else ((255, 230, 80) if is_boss else (0, 255, 200))
     pygame.draw.circle(surf, (*eye_col, alpha), (36, 14), 4)
     pygame.draw.circle(surf, (*eye_col, alpha), (36, 28), 4)
     pygame.draw.circle(surf, (255, 255, 255, alpha), (38, 14), 2)
     pygame.draw.circle(surf, (255, 255, 255, alpha), (38, 28), 2)
-
-    # Snout Cannon / Fang Emitter
     pygame.draw.polygon(surf, (*accent, alpha), [(46, 19), (56, 21), (46, 23)])
 
     return surf
@@ -256,7 +249,7 @@ class Ordnance:
             pygame.draw.circle(surface, (255, 255, 255), (ix, iy), max(2, self.radius - 3))
 
 # ==============================================================================
-# AI ENEMY CLASS (SNAKE LENGTH: 10X AT L1 TO 20X AT L10, THEN FIXED)
+# AI ENEMY CLASS
 # ==============================================================================
 class ViperEnemy:
     def __init__(self, level: int, is_boss: bool = False, is_minion: bool = False, speed: float = 5.0):
@@ -264,7 +257,6 @@ class ViperEnemy:
         self.is_boss = is_boss
         self.is_minion = is_minion
         
-        # Viper length: 10x squirrel body (18 segs) at L1 -> doubles to 20x (36 segs) at L10
         prog = min(1.0, (level - 1) / 9.0)
         self.max_segments = int(18 + (18 * prog))
 
@@ -413,7 +405,6 @@ class ViperEnemy:
         if self.is_burrowed:
             return
         
-        # 1. Articulated trailing segments
         tail_points = self.get_tail_segments()
         accent = (255, 45, 85) if self.is_boss else (0, 220, 255)
         for i, (seg_x, seg_y, _) in enumerate(tail_points):
@@ -425,7 +416,6 @@ class ViperEnemy:
             pygame.draw.circle(s_surf, (*accent, alpha_val), (seg_r + 2, seg_r + 2), seg_r, 1)
             surface.blit(s_surf, (seg_x - seg_r - 2, seg_y - seg_r - 2))
 
-        # 2. Glowing Head on top
         base_surf = self.head_flash if self.flash_timer > 0 else self.head_normal
         rotated = pygame.transform.rotate(base_surf, -self.angle)
         if self.camo_alpha < 255:
@@ -433,7 +423,6 @@ class ViperEnemy:
         rot_rect = rotated.get_rect(center=(self.x, self.y))
         surface.blit(rotated, rot_rect.topleft)
 
-        # 3. Reticle / Targeting Bracket
         bracket_col = (255, 70, 70) if self.is_boss else (0, 255, 230)
         bracket_r = 20
         pygame.draw.circle(surface, bracket_col, (int(self.x), int(self.y)), bracket_r, 1)
@@ -463,8 +452,9 @@ async def main():
     global joysticks
     SCREEN_WIDTH, SCREEN_HEIGHT = 800, 600
     screen = pygame.display.set_mode((SCREEN_WIDTH, SCREEN_HEIGHT))
+    world_surface = pygame.Surface((SCREEN_WIDTH, SCREEN_HEIGHT))
     dark_overlay = pygame.Surface((SCREEN_WIDTH, SCREEN_HEIGHT), pygame.SRCALPHA)
-    pygame.display.set_caption("MODIS NeonTail - Cyber Combat")
+    pygame.display.set_caption("MODIS NeonTail - Impact Engine")
     clock = pygame.time.Clock()
 
     font = pygame.font.SysFont("consolas", 13, bold=True)
@@ -480,6 +470,11 @@ async def main():
     current_level = 1
     total_score = 0
     drones_killed_session = 0
+
+    # Screen Shake & Impact Freeze Engine
+    shake_timer = 0
+    shake_intensity = 0.0
+    hit_freeze_frames = 0
 
     bunker = BunkerRoom(pygame.Rect(340, 250, 120, 90))
     barricades = [
@@ -510,6 +505,11 @@ async def main():
     def get_viper_length_factor(lvl: int) -> float:
         return min(2.0, 1.0 + (min(10, lvl) - 1) / 9.0)
 
+    def apply_screen_shake(duration: int, intensity: float):
+        nonlocal shake_timer, shake_intensity
+        shake_timer = duration
+        shake_intensity = max(shake_intensity, intensity)
+
     p1_x, p1_y = 120.0, 280.0
     p1_speed = get_current_speed(current_level)
     p1_max_hp = get_max_hp(current_level)
@@ -537,7 +537,6 @@ async def main():
     p1_wins = 0
     p2_wins = 0
 
-    # Player 2 Serpent Configuration
     p2_x, p2_y = 620.0, 280.0
     p2_speed = get_current_speed(current_level)
     p2_max_hp = 120 + (current_level * 10)
@@ -587,6 +586,7 @@ async def main():
     def trigger_explosion(x: float, y: float, max_r: float, dmg: int, col=(255, 120, 0)):
         SFX.snd_bomb.play()
         shockwaves.append({"x": x, "y": y, "r": 8.0, "max_r": max_r, "col": col, "dmg": dmg})
+        apply_screen_shake(12, 6.0)
         for _ in range(18):
             ang = random.uniform(0, 6.28)
             sp = random.uniform(2.5, 5.5)
@@ -814,26 +814,33 @@ async def main():
             if event.type == pygame.KEYDOWN and event.key == pygame.K_ESCAPE:
                 game_state = "MODE_SELECT"
 
-        screen.fill((10, 12, 22))
+        # Hit-Freeze Micro-Pause
+        if hit_freeze_frames > 0:
+            hit_freeze_frames -= 1
+            clock.tick(60)
+            await asyncio.sleep(0)
+            continue
+
+        world_surface.fill((10, 12, 22))
         for gx in range(0, SCREEN_WIDTH, 50):
-            pygame.draw.line(screen, (20, 24, 40), (gx, 0), (gx, SCREEN_HEIGHT))
+            pygame.draw.line(world_surface, (20, 24, 40), (gx, 0), (gx, SCREEN_HEIGHT))
         for gy in range(0, SCREEN_HEIGHT, 50):
-            pygame.draw.line(screen, (20, 24, 40), (0, gy), (SCREEN_WIDTH, gy))
+            pygame.draw.line(world_surface, (20, 24, 40), (0, gy), (SCREEN_WIDTH, gy))
 
         # MODE SELECT SCREEN
         if game_state == "MODE_SELECT":
             t_surf = title_font.render("MODIS NEON TAIL", True, (255, 140, 0))
             sub_surf = font.render("CHOOSE GAMEPLAY MODE", True, (0, 220, 255))
-            screen.blit(t_surf, (SCREEN_WIDTH // 2 - t_surf.get_width() // 2, 45))
-            screen.blit(sub_surf, (SCREEN_WIDTH // 2 - sub_surf.get_width() // 2, 88))
+            world_surface.blit(t_surf, (SCREEN_WIDTH // 2 - t_surf.get_width() // 2, 45))
+            world_surface.blit(sub_surf, (SCREEN_WIDTH // 2 - sub_surf.get_width() // 2, 88))
 
             card1 = pygame.Rect(55, 145, 335, 350)
-            pygame.draw.rect(screen, (18, 22, 38), card1, border_radius=12)
-            pygame.draw.rect(screen, (255, 140, 0), card1, 2, border_radius=12)
-            screen.blit(big_font.render("1P CAMPAIGN", True, (255, 180, 80)), (75, 160))
+            pygame.draw.rect(world_surface, (18, 22, 38), card1, border_radius=12)
+            pygame.draw.rect(world_surface, (255, 140, 0), card1, 2, border_radius=12)
+            world_surface.blit(big_font.render("1P CAMPAIGN", True, (255, 180, 80)), (75, 160))
             lines1 = [
-                "Enhanced Visual Targeting:",
-                "- Glowing Cyber Serpent Heads",
+                "Screen Shake & Impact Mechanics:",
+                "- Dynamic Hit-Freeze on Headshots",
                 "- High-Visibility Reticle Lock",
                 "- Undulating Snake Body Trail",
                 "- Dynamic Tail Scaling (1-10)",
@@ -844,17 +851,17 @@ async def main():
             ]
             y_c1 = 198
             for ln in lines1:
-                col = (100, 255, 150) if ">>" in ln else ((0, 240, 255) if "Heads" in ln or "Reticle" in ln else (210, 220, 235))
-                screen.blit(font.render(ln, True, col), (70, y_c1))
+                col = (100, 255, 150) if ">>" in ln else ((0, 240, 255) if "Hit-Freeze" in ln or "Reticle" in ln else (210, 220, 235))
+                world_surface.blit(font.render(ln, True, col), (70, y_c1))
                 y_c1 += 23
 
             card2 = pygame.Rect(410, 145, 335, 350)
-            pygame.draw.rect(screen, (18, 22, 38), card2, border_radius=12)
-            pygame.draw.rect(screen, (0, 210, 255), card2, 2, border_radius=12)
-            screen.blit(big_font.render("2P DUEL (PVP)", True, (0, 220, 255)), (435, 160))
+            pygame.draw.rect(world_surface, (18, 22, 38), card2, border_radius=12)
+            pygame.draw.rect(world_surface, (0, 210, 255), card2, 2, border_radius=12)
+            world_surface.blit(big_font.render("2P DUEL (PVP)", True, (0, 220, 255)), (435, 160))
             lines2 = [
                 "P1 (Squirrel) vs P2 (Cyber Snake)",
-                "- P2 Now Uses Full Slithering Snake",
+                "- Screen-shake on heavy ordnance hits",
                 "- Visible Targeting Bracket on Head",
                 "- Armor & Speed scale each round",
                 "- Full ordnance & decoy loadout",
@@ -864,10 +871,11 @@ async def main():
             ]
             y_c2 = 198
             for ln in lines2:
-                col = (100, 255, 150) if ">>" in ln else ((0, 240, 255) if "P2 Now" in ln or "Bracket" in ln else (210, 220, 235))
-                screen.blit(font.render(ln, True, col), (425, y_c2))
+                col = (100, 255, 150) if ">>" in ln else ((0, 240, 255) if "Screen-shake" in ln or "Bracket" in ln else (210, 220, 235))
+                world_surface.blit(font.render(ln, True, col), (425, y_c2))
                 y_c2 += 23
 
+            screen.blit(world_surface, (0, 0))
             pygame.display.flip()
             clock.tick(60)
             await asyncio.sleep(0)
@@ -891,6 +899,7 @@ async def main():
                     p2_hp = p2_max_hp
                 reset_positions()
 
+            screen.blit(world_surface, (0, 0))
             pygame.display.flip()
             clock.tick(60)
             await asyncio.sleep(0)
@@ -917,7 +926,7 @@ async def main():
                 if fw["life"] <= 0:
                     fireworks.remove(fw)
                 else:
-                    pygame.draw.circle(screen, fw["col"], (int(fw["x"]), int(fw["y"])), 3)
+                    pygame.draw.circle(world_surface, fw["col"], (int(fw["x"]), int(fw["y"])), 3)
 
             center_x, center_y = 280 if break_winner == "P1" else 520, 320
             loser_x, loser_y = 520 if break_winner == "P1" else 280, 320
@@ -929,35 +938,35 @@ async def main():
                 hover_y = center_y + math.sin(t_progress * 0.15) * 18
                 rot_ang = (t_progress * 24) % 360
                 w_rot = pygame.transform.rotate(win_sprite_raw, rot_ang)
-                screen.blit(w_rot, w_rot.get_rect(center=(center_x, hover_y)))
+                world_surface.blit(w_rot, w_rot.get_rect(center=(center_x, hover_y)))
             elif active_dance == "DISCO":
                 step_x = center_x + math.sin(t_progress * 0.25) * 30
                 tilt = math.sin(t_progress * 0.25) * 16
                 w_rot = pygame.transform.rotate(win_sprite_raw, tilt)
-                screen.blit(w_rot, w_rot.get_rect(center=(step_x, center_y)))
+                world_surface.blit(w_rot, w_rot.get_rect(center=(step_x, center_y)))
             elif active_dance == "JELLY":
                 squish = 1.0 + math.sin(t_progress * 0.28) * 0.25
                 w = max(10, int(win_sprite_raw.get_width() * squish))
                 h = max(10, int(win_sprite_raw.get_height() * (2.0 - squish)))
                 w_surf = pygame.transform.scale(win_sprite_raw, (w, h))
-                screen.blit(w_surf, w_surf.get_rect(center=(center_x, center_y)))
+                world_surface.blit(w_surf, w_surf.get_rect(center=(center_x, center_y)))
             elif active_dance == "MOONWALK":
                 slide_x = center_x + ((t_progress * 2) % 120) - 60
                 bob_y = center_y + abs(math.sin(t_progress * 0.2)) * -12
                 w_flip = pygame.transform.flip(win_sprite_raw, True, False)
-                screen.blit(w_flip, w_flip.get_rect(center=(slide_x, bob_y)))
+                world_surface.blit(w_flip, w_flip.get_rect(center=(slide_x, bob_y)))
             else:
                 rot_ang = (t_progress * 14) % 360
                 jump_y = center_y - abs(math.sin(t_progress * 0.12)) * 36
                 w_rot = pygame.transform.rotate(win_sprite_raw, rot_ang)
-                screen.blit(w_rot, w_rot.get_rect(center=(center_x, jump_y)))
+                world_surface.blit(w_rot, w_rot.get_rect(center=(center_x, jump_y)))
 
             if break_winner == "P1":
                 v_loser = create_viper_head(is_boss=False, flash_white=(break_timer % 10 < 5))
-                screen.blit(v_loser, v_loser.get_rect(center=(loser_x, loser_y)))
+                world_surface.blit(v_loser, v_loser.get_rect(center=(loser_x, loser_y)))
             else:
                 s_loser = create_squirrel_sprite(sq_scale, False, (255, 80, 80))
-                screen.blit(s_loser, (loser_x - 30, loser_y - 20))
+                world_surface.blit(s_loser, (loser_x - 30, loser_y - 20))
 
             if break_timer <= 0:
                 if prev_mode == "CAMPAIGN":
@@ -973,19 +982,20 @@ async def main():
                     p2_hp = p2_max_hp
                 reset_positions()
 
+            screen.blit(world_surface, (0, 0))
             pygame.display.flip()
             clock.tick(60)
             await asyncio.sleep(0)
             continue
 
         for hole in burrow_holes:
-            pygame.draw.circle(screen, (35, 10, 50), hole, 20)
-            pygame.draw.circle(screen, (160, 40, 255), hole, 20, 2)
-            pygame.draw.circle(screen, (10, 5, 20), hole, 12)
+            pygame.draw.circle(world_surface, (35, 10, 50), hole, 20)
+            pygame.draw.circle(world_surface, (160, 40, 255), hole, 20, 2)
+            pygame.draw.circle(world_surface, (10, 5, 20), hole, 12)
 
-        bunker.draw(screen, is_boss_level=(current_level >= 10))
+        bunker.draw(world_surface, is_boss_level=(current_level >= 10))
         for b_wall in barricades:
-            b_wall.draw(screen)
+            b_wall.draw(world_surface)
 
         for pool in acid_pools[:]:
             pool["life"] -= 1
@@ -995,7 +1005,7 @@ async def main():
                 p_surf = pygame.Surface((pool["radius"] * 2, pool["radius"] * 2), pygame.SRCALPHA)
                 alpha = min(180, pool["life"] * 2)
                 pygame.draw.circle(p_surf, (140, 255, 40, alpha), (pool["radius"], pool["radius"]), pool["radius"])
-                screen.blit(p_surf, (pool["x"] - pool["radius"], pool["y"] - pool["radius"]))
+                world_surface.blit(p_surf, (pool["x"] - pool["radius"], pool["y"] - pool["radius"]))
 
         for pt in player_trails[:]:
             pt["life"] -= 1
@@ -1006,7 +1016,7 @@ async def main():
                     if math.hypot(b["x"] - pt["x"], b["y"] - pt["y"]) < 12:
                         enemy_bullets.remove(b)
                         SFX.snd_hit.play()
-                pygame.draw.circle(screen, (0, 240, 255), (int(pt["x"]), int(pt["y"])), 3)
+                pygame.draw.circle(world_surface, (0, 240, 255), (int(pt["x"]), int(pt["y"])), 3)
 
         keys = pygame.key.get_pressed()
         mouse_buttons = pygame.mouse.get_pressed()
@@ -1168,6 +1178,7 @@ async def main():
                                 hit_sparks.append([e.x, e.y, random.uniform(-4, 4), random.uniform(-4, 4), 3, current_wpn["color_outer"], 12])
                             if e.hp <= 0:
                                 drones_killed_session += 1
+                                apply_screen_shake(10, 4.0)
                                 if e.has_split:
                                     for _ in range(2):
                                         campaign_enemies.append(ViperEnemy(current_level, is_boss=False, is_minion=True, speed=p1_speed * 1.1))
@@ -1332,6 +1343,7 @@ async def main():
                 elif p1_micro_rect.colliderect(b_rect):
                     p1_last_hit_timer = 0
                     incoming_dmg = b["dmg"]
+                    apply_screen_shake(8, 4.0)
                     if p1_armor > 0:
                         absorbed = min(p1_armor, incoming_dmg)
                         p1_armor -= absorbed
@@ -1364,13 +1376,17 @@ async def main():
 
                 for e in campaign_enemies[:]:
                     if not e.is_burrowed:
-                        # Core head hit
+                        # Core head hit with Hit-Freeze & Screen Shake
                         if e.core_rect.colliderect(b_rect):
                             e.hp -= b["dmg"]
                             e.flash_timer = 3
                             SFX.snd_hit.play()
                             total_score += b["dmg"]
                             p1_power_charge += 24.0
+
+                            # Trigger physical impact juice
+                            hit_freeze_frames = 2
+                            apply_screen_shake(6, 3.5)
 
                             b["pierce"] = b.get("pierce", 1) - 1
                             if b["pierce"] <= 0:
@@ -1384,6 +1400,7 @@ async def main():
                                 SFX.snd_win.play()
                             if e.hp <= 0:
                                 drones_killed_session += 1
+                                apply_screen_shake(12, 6.0)
                                 if e.has_split:
                                     for _ in range(2):
                                         campaign_enemies.append(ViperEnemy(current_level, is_boss=False, is_minion=True, speed=p1_speed * 1.1))
@@ -1408,9 +1425,7 @@ async def main():
             if p1_hp <= 0:
                 handle_round_conclusion("P2", "CAMPAIGN")
 
-        # ======================================================================
-        # 2-PLAYER DUEL LOGIC (UPGRADED WITH FULL ARTICULATED CYBER SNAKE)
-        # ======================================================================
+        # 2-PLAYER DUEL LOGIC
         elif game_state == "DUEL":
             p2_micro_rect = pygame.Rect(p2_x - 18, p2_y - 18, 36, 36)
 
@@ -1519,6 +1534,7 @@ async def main():
                 elif p1_micro_rect.colliderect(b_rect) and p1_hp > 0:
                     p1_last_hit_timer = 0
                     incoming = b["dmg"]
+                    apply_screen_shake(8, 4.0)
                     if p1_armor > 0:
                         absorbed = min(p1_armor, incoming)
                         p1_armor -= absorbed
@@ -1537,6 +1553,8 @@ async def main():
                     if p2_micro_rect.colliderect(b_rect):
                         p2_last_hit_timer = 0
                         incoming = b["dmg"]
+                        hit_freeze_frames = 2
+                        apply_screen_shake(6, 3.5)
                         if p2_armor > 0:
                             absorbed = min(p2_armor, incoming)
                             p2_armor -= absorbed
@@ -1578,37 +1596,37 @@ async def main():
                 p1_bullets.remove(b)
 
         for b in p1_bullets:
-            pygame.draw.circle(screen, b["color_outer"], (int(b["x"]), int(b["y"])), b["radius"])
-            pygame.draw.circle(screen, b["color_core"], (int(b["x"]), int(b["y"])), max(1, b["radius"] - 2))
+            pygame.draw.circle(world_surface, b["color_outer"], (int(b["x"]), int(b["y"])), b["radius"])
+            pygame.draw.circle(world_surface, b["color_core"], (int(b["x"]), int(b["y"])), max(1, b["radius"] - 2))
 
         for b in (enemy_bullets if game_state == "CAMPAIGN" else p2_bullets):
             color = b.get("color", (0, 210, 255))
             r = b.get("radius", 5)
-            pygame.draw.circle(screen, color, (int(b["x"]), int(b["y"])), r)
-            pygame.draw.circle(screen, (255, 255, 255), (int(b["x"]), int(b["y"])), max(1, r - 2))
+            pygame.draw.circle(world_surface, color, (int(b["x"]), int(b["y"])), r)
+            pygame.draw.circle(world_surface, (255, 255, 255), (int(b["x"]), int(b["y"])), max(1, r - 2))
 
         for ord_item in active_ordnance:
-            ord_item.draw(screen)
+            ord_item.draw(world_surface)
 
         for sw in shockwaves:
             alpha = max(30, int(255 * (1.0 - sw["r"] / sw["max_r"])))
             sw_surf = pygame.Surface((int(sw["r"] * 2 + 8), int(sw["r"] * 2 + 8)), pygame.SRCALPHA)
-            pygame.draw.circle(sw_surf, (*sw["col"], alpha), (int(sw["r"] + 4), int(sw["r"] + 4)), int(sw["r"]), 3)
-            screen.blit(sw_surf, (int(sw["x"] - sw["r"] - 4), int(sw["y"] - sw["r"] - 4)))
+            pygame.draw.circle(sw_surf, (*sw["col"], alpha), (int(sw["r"] + 4), int(sw["r"] + 4)), int(sw["r"]), 2)
+            world_surface.blit(sw_surf, (int(sw["x"] - sw["r"] - 4), int(sw["y"] - sw["r"] - 4)))
 
         wpn = WEAPON_TIERS[p1_power_tier]
         if p1_laser_active:
-            pygame.draw.line(screen, wpn["color_outer"], (center_p1_x, center_p1_y), (p1_laser_end_x, p1_laser_end_y), wpn["beam_w"] + 4)
-            pygame.draw.line(screen, wpn["color_core"], (center_p1_x, center_p1_y), (p1_laser_end_x, p1_laser_end_y), wpn["beam_w"])
+            pygame.draw.line(world_surface, wpn["color_outer"], (center_p1_x, center_p1_y), (p1_laser_end_x, p1_laser_end_y), wpn["beam_w"] + 4)
+            pygame.draw.line(world_surface, wpn["color_core"], (center_p1_x, center_p1_y), (p1_laser_end_x, p1_laser_end_y), wpn["beam_w"])
 
         for dec in active_decoys:
             alpha = 130 + int(math.sin(dec["life"] * 0.2) * 50)
             if dec["type"] == "p1":
                 h_surf = create_squirrel_sprite(p1_sq_tail_scale, True, (0, 240, 255), alpha=alpha)
-                screen.blit(h_surf, (dec["x"], dec["y"]))
+                world_surface.blit(h_surf, (dec["x"], dec["y"]))
             else:
                 v_h_raw = create_viper_head(is_boss=False, flash_white=False, alpha=alpha)
-                screen.blit(v_h_raw, (dec["x"] - 29, dec["y"] - 21))
+                world_surface.blit(v_h_raw, (dec["x"] - 29, dec["y"] - 21))
 
         for spark in hit_sparks[:]:
             spark[0] += spark[2]
@@ -1617,7 +1635,7 @@ async def main():
             if spark[6] <= 0:
                 hit_sparks.remove(spark)
             else:
-                pygame.draw.circle(screen, spark[5], (int(spark[0]), int(spark[1])), spark[4])
+                pygame.draw.circle(world_surface, spark[5], (int(spark[0]), int(spark[1])), spark[4])
 
         for ft in floating_texts[:]:
             ft[2] -= 1.0
@@ -1625,29 +1643,28 @@ async def main():
             if ft[4] <= 0:
                 floating_texts.remove(ft)
             else:
-                screen.blit(font.render(ft[0], True, ft[3]), (int(ft[1]), int(ft[2])))
+                world_surface.blit(font.render(ft[0], True, ft[3]), (int(ft[1]), int(ft[2])))
 
         # Draw P1
         aura_color = (0, 240, 255) if p1_surge_timer > 0 else WEAPON_TIERS[p1_power_tier]["color_outer"]
         s_surf = create_squirrel_sprite(p1_sq_tail_scale, p1_guard, aura_color)
         if p1_hp > 0:
-            screen.blit(s_surf, (p1_x, p1_y))
+            world_surface.blit(s_surf, (p1_x, p1_y))
 
         if p1_armor > 0 and p1_hp > 0:
-            pygame.draw.circle(screen, (0, 180, 255), (int(center_p1_x), int(center_p1_y)), 22, 1)
+            pygame.draw.circle(world_surface, (0, 180, 255), (int(center_p1_x), int(center_p1_y)), 22, 1)
 
         if p1_guard:
-            pygame.draw.circle(screen, (0, 220, 255), (int(center_p1_x), int(center_p1_y)), 34, 2)
+            pygame.draw.circle(world_surface, (0, 220, 255), (int(center_p1_x), int(center_p1_y)), 34, 2)
 
         # Draw Enemies (Campaign Mode)
         if game_state == "CAMPAIGN":
             for e in campaign_enemies:
-                e.draw(screen)
+                e.draw(world_surface)
 
         # Draw Player 2 (Duel Mode)
         elif game_state == "DUEL" and p2_hp > 0:
             if not p2_is_burrowed:
-                # 1. Trailing Snake Segments
                 step = 3
                 for i in range(2, p2_max_segments + 2):
                     idx = i * step
@@ -1658,49 +1675,47 @@ async def main():
                         s_surf = pygame.Surface((seg_r * 2 + 4, seg_r * 2 + 4), pygame.SRCALPHA)
                         pygame.draw.circle(s_surf, (25, 38, 60), (seg_r + 2, seg_r + 2), seg_r)
                         pygame.draw.circle(s_surf, (0, 220, 255), (seg_r + 2, seg_r + 2), seg_r, 1)
-                        screen.blit(s_surf, (seg_x - seg_r - 2, seg_y - seg_r - 2))
+                        world_surface.blit(s_surf, (seg_x - seg_r - 2, seg_y - seg_r - 2))
 
-                # 2. Glowing P2 Head on Top
                 v_head = p2_head_flash if p2_flash_timer > 0 else p2_head_normal
                 v_rot = pygame.transform.rotate(v_head, -p2_angle)
-                screen.blit(v_rot, v_rot.get_rect(center=(p2_x, p2_y)))
+                world_surface.blit(v_rot, v_rot.get_rect(center=(p2_x, p2_y)))
 
-                # 3. P2 Targeting Reticle
                 bracket_col = (0, 255, 230)
                 bracket_r = 20
-                pygame.draw.circle(screen, bracket_col, (int(p2_x), int(p2_y)), bracket_r, 1)
+                pygame.draw.circle(world_surface, bracket_col, (int(p2_x), int(p2_y)), bracket_r, 1)
                 for deg in (0, 90, 180, 270):
                     rad = math.radians(deg)
                     tx1 = p2_x + math.cos(rad) * (bracket_r - 4)
                     ty1 = p2_y + math.sin(rad) * (bracket_r - 4)
                     tx2 = p2_x + math.cos(rad) * (bracket_r + 4)
                     ty2 = p2_y + math.sin(rad) * (bracket_r + 4)
-                    pygame.draw.line(screen, bracket_col, (tx1, ty1), (tx2, ty2), 1)
+                    pygame.draw.line(world_surface, bracket_col, (tx1, ty1), (tx2, ty2), 1)
 
                 if p2_armor > 0:
-                    pygame.draw.circle(screen, (0, 180, 255), (int(p2_x), int(p2_y)), 22, 1)
+                    pygame.draw.circle(world_surface, (0, 180, 255), (int(p2_x), int(p2_y)), 22, 1)
             else:
-                screen.blit(font.render("[UNDERGROUND]", True, (200, 100, 255)), (p2_x - 30, p2_y - 20))
+                world_surface.blit(font.render("[UNDERGROUND]", True, (200, 100, 255)), (p2_x - 30, p2_y - 20))
 
         if not ps_pad_p1:
-            pygame.draw.circle(screen, WEAPON_TIERS[p1_power_tier]["color_outer"], mouse_pos, 5, 1)
-            pygame.draw.circle(screen, (255, 255, 255), mouse_pos, 2)
+            pygame.draw.circle(world_surface, WEAPON_TIERS[p1_power_tier]["color_outer"], mouse_pos, 5, 1)
+            pygame.draw.circle(world_surface, (255, 255, 255), mouse_pos, 2)
 
         # HUD
         p1_col = (255, 140, 0) if p1_hp > 50 else (255, 60, 60)
-        screen.blit(font.render("P1: S.Q.U.I.R.E.L.", True, (255, 180, 80)), (20, 10))
-        screen.blit(num_font.render(f"HP: {int(p1_hp)}/{p1_max_hp}", True, p1_col), (20, 25))
-        screen.blit(font.render(f"ARMOR: {int(p1_armor)}/{p1_max_armor}", True, (0, 210, 255)), (20, 48))
+        world_surface.blit(font.render("P1: S.Q.U.I.R.E.L.", True, (255, 180, 80)), (20, 10))
+        world_surface.blit(num_font.render(f"HP: {int(p1_hp)}/{p1_max_hp}", True, p1_col), (20, 25))
+        world_surface.blit(font.render(f"ARMOR: {int(p1_armor)}/{p1_max_armor}", True, (0, 210, 255)), (20, 48))
         spd_col = (0, 240, 255) if p1_surge_timer > 0 else (0, 255, 200)
-        screen.blit(font.render(f"SPEED: {actual_p1_speed if 'actual_p1_speed' in locals() else p1_speed:.2f}", True, spd_col), (20, 64))
+        world_surface.blit(font.render(f"SPEED: {actual_p1_speed if 'actual_p1_speed' in locals() else p1_speed:.2f}", True, spd_col), (20, 64))
         tail_disp = f"SQ TAIL DEF: {int(p1_sq_tail_scale * 100)}% | VIPER LENGTH: {int(get_viper_length_factor(current_level) * 10)}x"
-        screen.blit(font.render(tail_disp, True, (255, 215, 60)), (20, 80))
+        world_surface.blit(font.render(tail_disp, True, (255, 215, 60)), (20, 80))
 
         if game_state == "CAMPAIGN":
             lvl_col = (255, 60, 90) if current_level >= 10 else (255, 230, 100)
             lvl_txt = "FINAL LEVEL 10 (BOSS)" if current_level >= 10 else f"LEVEL {current_level} / 10"
-            screen.blit(font.render(lvl_txt, True, lvl_col), (SCREEN_WIDTH // 2 - 50, 10))
-            screen.blit(font.render(f"SCORE: {total_score}", True, (200, 210, 240)), (SCREEN_WIDTH - 140, 10))
+            world_surface.blit(font.render(lvl_txt, True, lvl_col), (SCREEN_WIDTH // 2 - 50, 10))
+            world_surface.blit(font.render(f"SCORE: {total_score}", True, (200, 210, 240)), (SCREEN_WIDTH - 140, 10))
 
             augments_active = []
             if current_level >= 2: augments_active.append("PLASMA TRAIL")
@@ -1710,7 +1725,7 @@ async def main():
             if current_level >= 8: augments_active.append("HYPER REFLEX")
             if augments_active:
                 aug_str = "AUGMENTS: " + " + ".join(augments_active)
-                screen.blit(font.render(aug_str, True, (0, 240, 255)), (20, SCREEN_HEIGHT - 22))
+                world_surface.blit(font.render(aug_str, True, (0, 240, 255)), (20, SCREEN_HEIGHT - 22))
 
         elif game_state == "DUEL":
             p2_col = (0, 210, 255) if p2_hp > 35 else (255, 60, 60)
@@ -1718,10 +1733,21 @@ async def main():
             p2_num = num_font.render(f"HP: {int(p2_hp)}/{p2_max_hp}", True, p2_col)
             p2_arm = font.render(f"ARMOR: {int(p2_armor)}/{p2_max_armor}", True, (0, 210, 255))
             p2_sub = font.render(f"SPEED: {p2_speed:.2f} | WINS: {p2_wins}", True, (200, 210, 230))
-            screen.blit(p2_head, (SCREEN_WIDTH - p2_head.get_width() - 20, 10))
-            screen.blit(p2_num, (SCREEN_WIDTH - p2_num.get_width() - 20, 25))
-            screen.blit(p2_arm, (SCREEN_WIDTH - p2_arm.get_width() - 20, 48))
-            screen.blit(p2_sub, (SCREEN_WIDTH - p2_sub.get_width() - 20, 64))
+            world_surface.blit(p2_head, (SCREEN_WIDTH - p2_head.get_width() - 20, 10))
+            world_surface.blit(p2_num, (SCREEN_WIDTH - p2_num.get_width() - 20, 25))
+            world_surface.blit(p2_arm, (SCREEN_WIDTH - p2_arm.get_width() - 20, 48))
+            world_surface.blit(p2_sub, (SCREEN_WIDTH - p2_sub.get_width() - 20, 64))
+
+        # Render Camera with Dynamic Screen Shake
+        offset_x, offset_y = 0, 0
+        if shake_timer > 0:
+            shake_timer -= 1
+            offset_x = random.randint(-int(shake_intensity), int(shake_intensity))
+            offset_y = random.randint(-int(shake_intensity), int(shake_intensity))
+            shake_intensity = max(0.0, shake_intensity - 0.4)
+
+        screen.fill((5, 5, 12))
+        screen.blit(world_surface, (offset_x, offset_y))
 
         pygame.display.flip()
         clock.tick(60)
