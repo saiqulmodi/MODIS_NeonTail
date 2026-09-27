@@ -7,7 +7,7 @@ import asyncio
 from array import array
 import pygame
 
-GAME_VERSION = "v7 FIT SCREEN"
+GAME_VERSION = "v8 LEVEL JUMP"
 
 # ---------------------------------------------------------
 # 1. VIEWPORT & FULLSCREEN CONFIGURATION
@@ -750,6 +750,24 @@ async def main():
 
     reset_game(1)
 
+    # Level-jump bar along the bottom: LV 1, 10, 20 ... 100
+    level_jumps = [1] + list(range(10, 101, 10))
+    btn_w, btn_gap = 58, 6
+    strip_x = WIDTH // 2 - (len(level_jumps) * (btn_w + btn_gap) - btn_gap) // 2 + 60
+    level_buttons = [(lvl, pygame.Rect(strip_x + i * (btn_w + btn_gap), HEIGHT - 66, btn_w, 22)) for i, lvl in enumerate(level_jumps)]
+
+    def draw_level_bar(current_level):
+        lbl = font_hud.render("JUMP TO LEVEL:", True, (255, 205, 50))
+        canvas.blit(lbl, (level_buttons[0][1].x - lbl.get_width() - 10, HEIGHT - 63))
+        for lvl, r in level_buttons:
+            active = (current_level // 10 * 10 if current_level >= 10 else 1) == lvl
+            pygame.draw.rect(canvas, (255, 205, 50) if active else (30, 40, 70), r, border_radius=4)
+            pygame.draw.rect(canvas, (255, 230, 120), r, 1, border_radius=4)
+            t = font_hud_sm.render(f"LV {lvl}", True, (20, 20, 30) if active else (230, 230, 230))
+            canvas.blit(t, t.get_rect(center=r.center))
+        hint = font_hud_sm.render("keys 1-9 = LV 10-90, 0 = LV 100, [ ] = -/+10", True, (160, 170, 200))
+        canvas.blit(hint, hint.get_rect(center=((level_buttons[0][1].x + level_buttons[-1][1].right) // 2, HEIGHT - 76)))
+
     running = True
     while running:
         current_level = level_state["level"]
@@ -780,6 +798,10 @@ async def main():
 
                 elif pygame.K_1 <= event.key <= pygame.K_9:
                     start_level((event.key - pygame.K_0) * 10)
+                    game_over = False
+
+                elif event.key == pygame.K_0:
+                    start_level(100)
                     game_over = False
 
                 elif event.key == pygame.K_RIGHTBRACKET or event.key == pygame.K_PAGEUP:
@@ -814,6 +836,14 @@ async def main():
                     squirrel_shot(players[0], mx, my)
                 elif event.key == pygame.K_e:
                     squirrel_nova(players[0])
+
+            # Level-jump bar: click LV 1 / 10 / 20 ... 100 (works on the game-over screen too)
+            elif event.type == pygame.MOUSEBUTTONDOWN and event.button == 1 and any(r.collidepoint(event.pos) for _, r in level_buttons):
+                for lvl, r in level_buttons:
+                    if r.collidepoint(event.pos):
+                        start_level(lvl)
+                        game_over = False
+                        break
 
             elif event.type == pygame.MOUSEBUTTONDOWN and not game_over:
                 if event.button == 1:
@@ -1012,10 +1042,18 @@ async def main():
             sc = font_hud.render(f"SCORE {players[0].score}   HI {high_score}   KILLS TO NEXT LEVEL {5 - level_state['kills'] % 5}", True, (230, 230, 230))
         canvas.blit(sc, sc.get_rect(center=(WIDTH // 2, 42)))
 
+        # Power comparison: squirrel vs viper at this level (always equal base power)
+        s_now = level_stats(current_level)
+        pw = font_hud.render(f"VIPERS: {len(vipers)}   |   POWER  SQUIRREL = VIPER   HP {s_now['max_hp']}  DEF {s_now['max_defense']}  ATK {s_now['attack_power']}",
+                             True, (80, 255, 120))
+        canvas.blit(pw, pw.get_rect(center=(WIDTH // 2, 62)))
+
         if banner["timer"] > 0:
             banner["timer"] -= 1
             b = font_hud.render(banner["text"], True, (255, 230, 90))
-            canvas.blit(b, b.get_rect(center=(WIDTH // 2, 70)))
+            canvas.blit(b, b.get_rect(center=(WIDTH // 2, 86)))
+
+        draw_level_bar(current_level)
 
         controls = {
             1: "[P1: WASD move, SPACE/L-CLICK shoot, E/R-CLICK nova] [M: MUTE] [R: RESET] [T: MODE]",
@@ -1031,10 +1069,11 @@ async def main():
             canvas.blit(overlay, (0, 0))
             txt_over = font_big.render("MISSION FAILED", True, (255, 60, 80))
             txt_stats = font_hud.render(f"LEVEL {current_level} | SCORE: {players[0].score} | BEST: {high_score}", True, (220, 220, 220))
-            txt_restart = font_hud.render("PRESS [R] TO RESTART  |  PRESS [1-9] TO WARP", True, (0, 255, 220))
+            txt_restart = font_hud.render("PRESS [R] TO RESTART  |  PRESS [1-9]/[0] OR CLICK A LEVEL BELOW TO WARP", True, (0, 255, 220))
             canvas.blit(txt_over, txt_over.get_rect(center=(WIDTH // 2, HEIGHT // 2 - 35)))
             canvas.blit(txt_stats, txt_stats.get_rect(center=(WIDTH // 2, HEIGHT // 2 + 15)))
             canvas.blit(txt_restart, txt_restart.get_rect(center=(WIDTH // 2, HEIGHT // 2 + 55)))
+            draw_level_bar(current_level)
 
         ox, oy = 0, 0
         if shake_intensity > 0:
