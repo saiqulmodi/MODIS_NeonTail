@@ -7,7 +7,8 @@ import asyncio
 from array import array
 import pygame
 
-GAME_VERSION = "v11 FULL FIREPOWER"
+GAME_NAME = "Stratos_squirrel_vs_viper"
+GAME_VERSION = "v12"
 
 # ---------------------------------------------------------
 # 1. VIEWPORT & FULLSCREEN CONFIGURATION
@@ -642,7 +643,7 @@ async def main():
     screen = pygame.display.set_mode((WIDTH, HEIGHT))
     fit_canvas_to_browser()
     fit_clock = 0
-    pygame.display.set_caption("MODIS NeonTail - Squirrel vs Viper")
+    pygame.display.set_caption(GAME_NAME)
     canvas = pygame.Surface((WIDTH, HEIGHT))
     clock = pygame.time.Clock()
 
@@ -969,7 +970,7 @@ async def main():
         overlay = pygame.Surface((WIDTH, HEIGHT), pygame.SRCALPHA)
         overlay.fill((6, 8, 18, 238))
         canvas.blit(overlay, (0, 0))
-        title = font_help_title.render("MODIS NEONTAIL  -  SQUIRREL vs VIPER", True, (255, 205, 50))
+        title = font_help_title.render(GAME_NAME, True, (255, 205, 50))
         canvas.blit(title, title.get_rect(center=(WIDTH // 2, 34)))
         mode_names = {1: "SOLO vs AI", 2: "DUAL SQUIRREL vs AI", 3: "SQUIRREL vs VIPER (2 players)"}
         m = font_help_head.render(f"MODE:  {mode_names[game_mode]}   (press T to change)      LEVEL: {current_level}", True, (0, 255, 220))
@@ -1399,7 +1400,7 @@ async def main():
         if pads:
             controls += f" [PAD: {len(pads)} CONNECTED]"
         canvas.blit(font_hud.render(controls, True, (0, 215, 255)), (25, HEIGHT - 35))
-        canvas.blit(font_hud_sm.render(GAME_VERSION, True, (120, 130, 160)), (WIDTH - 110, HEIGHT - 20))
+        canvas.blit(font_hud_sm.render(f"{GAME_NAME} {GAME_VERSION}", True, (120, 130, 160)), (WIDTH - 200, HEIGHT - 20))
 
         if game_over:
             overlay = pygame.Surface((WIDTH, HEIGHT), pygame.SRCALPHA)
