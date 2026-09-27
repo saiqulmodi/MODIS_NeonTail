@@ -7,7 +7,7 @@ import asyncio
 from array import array
 import pygame
 
-GAME_VERSION = "v9 VIPER PACKS"
+GAME_VERSION = "v10 CONTROLLERS"
 
 # ---------------------------------------------------------
 # 1. VIEWPORT & FULLSCREEN CONFIGURATION
@@ -440,6 +440,7 @@ class SquirrelPlayer(Fighter):
         self.score = 0
         self.kills = 0
         self.facing_right = True
+        self.aim_angle = 0.0
         self.anim_t = 0.0
         self.apply_level_up(level)
 
@@ -452,6 +453,9 @@ class SquirrelPlayer(Fighter):
             self.facing_right = True
         elif dx < 0:
             self.facing_right = False
+        if dx or dy:
+            # Last direction moved: used to aim controller shots when the right stick is idle
+            self.aim_angle = math.atan2(dy, dx)
         self.x = max(50, min(WIDTH - 50, self.x + dx * self.speed))
         self.y = max(50, min(HEIGHT - 50, self.y + dy * self.speed))
 
@@ -656,6 +660,78 @@ async def main():
     show_help = True   # the game opens on the "how to play / all keys" screen (H shows it again)
     game_over = False
 
+    # ---- Game controllers: pad 1 = Squirrel P1, pad 2 = Squirrel P2 (Dual) or the Viper (PvP) ----
+    try:
+        pygame.joystick.init()
+    except Exception:
+        pass
+    pads = {}   # instance_id -> Joystick, kept in the order they were plugged in
+    PAD_DEAD = 0.3
+    PAD_START = 9 if sys.platform == "emscripten" else 7   # browser vs desktop button numbering
+    PAD_SHOOT = (0, 2)          # A, X
+    PAD_SPECIAL = (1, 3, 4, 5)  # B, Y, LB, RB
+
+    def pad_role(j):
+        """Which character this controller drives in the current mode (None = unused)."""
+        order = list(pads.values())
+        idx = order.index(j) if j in order else -1
+        if idx == 0:
+            return "p1"
+        if idx == 1:
+            return {2: "p2", 3: "viper"}.get(game_mode)
+        return None
+
+    def pad_for(role):
+        for j in pads.values():
+            if pad_role(j) == role:
+                return j
+        return None
+
+    def pad_move(role):
+        """Left stick (analog) or D-pad for the given role; (0, 0) if no controller."""
+        j = pad_for(role)
+        if j is None:
+            return 0.0, 0.0
+        x = y = 0.0
+        try:
+            if j.get_numaxes() >= 2:
+                x, y = j.get_axis(0), j.get_axis(1)
+            if abs(x) < PAD_DEAD:
+                x = 0.0
+            if abs(y) < PAD_DEAD:
+                y = 0.0
+            if j.get_numhats() > 0:
+                hx, hy = j.get_hat(0)
+                if hx:
+                    x = float(hx)
+                if hy:
+                    y = float(-hy)
+        except Exception:
+            return 0.0, 0.0
+        m = math.hypot(x, y)
+        if m > 1.0:
+            x, y = x / m, y / m
+        return x, y
+
+    def pad_aim(j, unit, enemies, fallback_angle):
+        """Right stick aims. With the stick idle: AI modes aim at the nearest enemy,
+        Squirrel vs Viper shoots straight ahead (no auto-aim for either player)."""
+        try:
+            if j.get_numaxes() >= 4:
+                rx, ry = j.get_axis(2), j.get_axis(3)
+                if math.hypot(rx, ry) > 0.5:
+                    return unit.x + rx * 200, unit.y + ry * 200
+        except Exception:
+            pass
+        alive = [e for e in enemies if e.hp > 0]
+        if game_mode != 3 and alive:
+            e = min(alive, key=lambda e: math.hypot(e.x - unit.x, e.y - unit.y))
+            return e.x, e.y
+        return unit.x + math.cos(fallback_angle) * 200, unit.y + math.sin(fallback_angle) * 200
+
+    def add_input(a, b):
+        return max(-1.0, min(1.0, a + b))
+
     def show_banner(text):
         banner["text"] = text
         banner["timer"] = 170
@@ -818,22 +894,20 @@ async def main():
         ("W A S D", "move"),
         ("SPACE / LEFT CLICK", "laser shot (aim with the mouse)"),
         ("E / RIGHT CLICK", "Nova ring attack (special)"),
-        ("SQUIRREL 2  (Dual mode)", None),
-        ("ARROW KEYS", "move"),
-        ("ENTER / RIGHT CTRL", "blaster shot"),
-        ("RIGHT SHIFT", "Nova ring attack"),
-        ("VIPER  (Player 2, Squirrel vs Viper)", None),
-        ("ARROW KEYS", "move the lead viper"),
-        ("ENTER / RIGHT CTRL", "venom spit (straight ahead)"),
-        ("RIGHT SHIFT", "venom burst (special)"),
+        ("SQUIRREL 2 (Dual)  /  VIPER (Player 2, Sqrl vs Viper)", None),
+        ("ARROW KEYS", "move (the viper player steers the lead viper)"),
+        ("ENTER / RIGHT CTRL", "squirrel blaster  /  viper venom spit"),
+        ("RIGHT SHIFT", "squirrel Nova  /  viper venom burst"),
+        ("GAME CONTROLLER  (pad 1 = Squirrel, pad 2 = Squirrel 2 / Viper)", None),
+        ("LEFT STICK / D-PAD", "move"),
+        ("A / X", "shoot (right stick aims)"),
+        ("B / Y / LB / RB", "special: Nova / venom burst"),
+        ("START", "start the game / show this screen"),
         ("GAME", None),
-        ("T", "change mode   |   R  restart   |   M  mute"),
-        ("H", "show this screen again"),
+        ("T  R  M  H", "mode / restart / mute / this screen"),
         ("LEVEL JUMP", None),
-        ("1 - 9", "jump to level 10, 20 ... 90"),
-        ("0", "jump to level 100"),
-        ("]  or  PAGE UP", "next level ending in 0 (23 -> 30)"),
-        ("[  or  PAGE DOWN", "previous one (23 -> 20)"),
+        ("1 - 9  /  0", "level 10, 20 ... 90  /  level 100"),
+        ("] [  or  PAGE UP / DOWN", "next / previous level ending in 0"),
         ("CLICK  LV 1 ... LV 100", "buttons at the bottom of the screen"),
     ]
     HELP_RULES = [
@@ -894,7 +968,7 @@ async def main():
                 canvas.blit(font_help.render(line, True, col), (x, y))
             y += 21
 
-        go = font_help_head.render("PRESS ENTER / SPACE OR CLICK TO START", True, (80, 255, 120))
+        go = font_help_head.render("PRESS ENTER / SPACE, CLICK, OR START ON A CONTROLLER TO PLAY", True, (80, 255, 120))
         canvas.blit(go, go.get_rect(center=(WIDTH // 2, HEIGHT - 28)))
 
     running = True
@@ -999,17 +1073,67 @@ async def main():
                 elif event.button == 3:
                     squirrel_nova(players[0])
 
+            # ---- Game controllers ----
+            elif event.type == pygame.JOYDEVICEADDED:
+                try:
+                    j = pygame.joystick.Joystick(event.device_index)
+                    j.init()
+                    pads[j.get_instance_id()] = j
+                    role = {"p1": "SQUIRREL P1", "p2": "SQUIRREL P2", "viper": "THE VIPER"}.get(pad_role(j), "nobody in this mode")
+                    show_banner(f"GAME CONTROLLER {len(pads)} CONNECTED  ->  controls {role}")
+                except Exception:
+                    pass
+
+            elif event.type == pygame.JOYDEVICEREMOVED:
+                pads.pop(getattr(event, "instance_id", None), None)
+                show_banner("GAME CONTROLLER DISCONNECTED")
+
+            elif event.type == pygame.JOYBUTTONDOWN:
+                j = pads.get(getattr(event, "instance_id", getattr(event, "joy", None)))
+                if j is None:
+                    continue
+                btn = event.button
+                if show_help:
+                    if btn == PAD_START or btn in PAD_SHOOT:
+                        show_help = False
+                    continue
+                if btn == PAD_START:
+                    show_help = True
+                    continue
+                if game_over:
+                    if btn in PAD_SHOOT:
+                        reset_game(current_level)
+                    continue
+                role = pad_role(j)
+                if role == "p1" or (role == "p2" and len(players) > 1):
+                    p = players[0] if role == "p1" else players[1]
+                    if btn in PAD_SHOOT:
+                        tx, ty = pad_aim(j, p, vipers, p.aim_angle)
+                        squirrel_shot(p, tx, ty)
+                    elif btn in PAD_SPECIAL:
+                        squirrel_nova(p)
+                elif role == "viper":
+                    v = pvp_viper()
+                    if v:
+                        if btn in PAD_SHOOT:
+                            tx, ty = pad_aim(j, v, players, v.heading)
+                            viper_spit(v, tx, ty)
+                        elif btn in PAD_SPECIAL:
+                            viper_burst(v)
+
         if not game_over and not show_help:
             keys = pygame.key.get_pressed()
 
-            # P1 Controls (WASD)
+            # P1 Controls (WASD + controller 1)
             if players[0].hp > 0:
-                players[0].move(keys[pygame.K_d] - keys[pygame.K_a], keys[pygame.K_s] - keys[pygame.K_w])
+                jx, jy = pad_move("p1")
+                players[0].move(add_input(keys[pygame.K_d] - keys[pygame.K_a], jx), add_input(keys[pygame.K_s] - keys[pygame.K_w], jy))
                 players[0].update()
 
-            # P2 Controls (Arrows)
+            # P2 Controls (Arrows + controller 2)
             if game_mode == 2 and len(players) > 1 and players[1].hp > 0:
-                players[1].move(keys[pygame.K_RIGHT] - keys[pygame.K_LEFT], keys[pygame.K_DOWN] - keys[pygame.K_UP])
+                jx, jy = pad_move("p2")
+                players[1].move(add_input(keys[pygame.K_RIGHT] - keys[pygame.K_LEFT], jx), add_input(keys[pygame.K_DOWN] - keys[pygame.K_UP], jy))
                 players[1].update()
 
             # Next wave: a full viper pack per squirrel (squirrel power already matches the pack)
@@ -1056,7 +1180,8 @@ async def main():
             # Move vipers
             for viper in vipers:
                 if game_mode == 3 and viper.is_player_controlled:
-                    viper.update_manual(keys[pygame.K_RIGHT] - keys[pygame.K_LEFT], keys[pygame.K_DOWN] - keys[pygame.K_UP])
+                    jx, jy = pad_move("viper")
+                    viper.update_manual(add_input(keys[pygame.K_RIGHT] - keys[pygame.K_LEFT], jx), add_input(keys[pygame.K_DOWN] - keys[pygame.K_UP], jy))
                 else:
                     viper.update_ai(players, projectiles, viper_spit, viper_burst, shards)
 
@@ -1213,6 +1338,8 @@ async def main():
             2: "[P1: WASD+SPACE+E] [P2: ARROWS move, ENTER shoot, R-SHIFT nova] [M: MUTE] [T: MODE] [H: HELP]",
             3: "[SQUIRREL: WASD+SPACE+E] [VIPER: ARROWS move, ENTER/R-CTRL spit, R-SHIFT burst] [M: MUTE] [T: MODE] [H: HELP]",
         }[game_mode]
+        if pads:
+            controls += f" [PAD: {len(pads)} CONNECTED]"
         canvas.blit(font_hud.render(controls, True, (0, 215, 255)), (25, HEIGHT - 35))
         canvas.blit(font_hud_sm.render(GAME_VERSION, True, (120, 130, 160)), (WIDTH - 110, HEIGHT - 20))
 
