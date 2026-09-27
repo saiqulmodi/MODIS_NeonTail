@@ -6,7 +6,7 @@ import asyncio
 from array import array
 import pygame
 
-GAME_VERSION = "v3 POWER-UPS"
+GAME_VERSION = "v4 NO BG MUSIC"
 
 # ---------------------------------------------------------
 # 1. VIEWPORT & FULLSCREEN CONFIGURATION
@@ -67,7 +67,6 @@ def save_stored_high_score(score):
 # ---------------------------------------------------------
 audio_muted = False
 SFX_RATE = 22050
-MUSIC_RATE = 16000
 
 def pcm16_sound(samples, rate):
     """Wraps 16-bit mono PCM samples in a RIFF WAV container (works in the browser build too)."""
@@ -156,7 +155,7 @@ ATTACK_TUNES = {
 PVP_INSTRUMENTS = {"vp_spit": "marimba", "vp_burst": "bell", "vp_bite": "drum"}
 
 def sound_tier(level):
-    """Sounds and music move up a step every 3 levels (0-11)."""
+    """Attack tunes move up a step every 3 levels (0-11)."""
     return max(0, min(11, (max(1, level) - 1) // 3))
 
 def render_tune(instrument, base, notes, scale, transpose, tempo):
@@ -195,35 +194,6 @@ def get_attack_sfx(tool, mode, level):
         except Exception:
             _attack_sfx_cache[key] = None
     return _attack_sfx_cache[key]
-
-# Background music chord progressions per mode: (root semitone, third)
-MODE_CHORDS = {
-    1: [(0, 4), (5, 4), (7, 4), (0, 4)],
-    2: [(0, 4), (9, 3), (5, 4), (7, 4)],
-    3: [(0, 3), (8, 4), (3, 4), (10, 4)],
-}
-
-def build_music_loop(mode, tier):
-    """Soft 16-step arpeggio loop; key rises and tempo quickens as the level tier grows."""
-    chords = MODE_CHORDS.get(mode, MODE_CHORDS[1])
-    root = 220.0 * 2 ** ((tier + MODE_KEYS.get(mode, 0)) / 12.0)
-    step = max(0.14, 0.22 - tier * 0.006)
-    lead_voice = {1: "pluck", 2: "marimba", 3: "bell"}.get(mode, "pluck")
-    pattern = [0, 1, 2, 3]
-    steps = len(chords) * 4
-
-    def fn(t):
-        idx = min(steps - 1, int(t / step))
-        chord_root, third = chords[idx // 4]
-        tones = [0, third, 7, 12]
-        semi = chord_root + tones[pattern[idx % 4]]
-        lt = t - idx * step
-        lead = voice(lead_voice, root * 2 ** (semi / 12.0), lt) * 0.55
-        ct = t - (idx // 4) * 4 * step
-        bass = math.sin(TWO_PI * (root / 2) * 2 ** (chord_root / 12.0) * t) * 0.35 * math.exp(-ct * 1.2)
-        return lead + bass
-
-    return render_sound(step * steps, fn, rate=MUSIC_RATE, peak=0.5)
 
 def sfx_boom_audio():
     # Enemy defeat: soft descending chime
@@ -597,29 +567,7 @@ async def main():
     except Exception:
         snd_boom = snd_pickup = snd_round = None
 
-    music_key = None
-    music_sound = None
-    music_cache = {}
-    music_on = False   # background music is OFF by default; only attacks make sound (B toggles)
-
-    def refresh_music():
-        """Stops any background loop, then starts the right one only if music is switched on."""
-        nonlocal music_sound
-        if music_sound:
-            music_sound.stop()
-            music_sound = None
-        if not music_on or audio_muted:
-            return
-        key = (game_mode, sound_tier(level_state["level"]))
-        if key not in music_cache:
-            try:
-                music_cache[key] = build_music_loop(*key)
-            except Exception:
-                music_cache[key] = None
-        music_sound = music_cache[key]
-        if music_sound:
-            music_sound.set_volume(0.25)
-            music_sound.play(loops=-1)
+    tune_key = None
 
     game_mode = 1  # 1: Solo vs AI, 2: Dual Squirrel vs AI, 3: Squirrel vs Viper
     level_state = {"level": 1, "kills": 0}
@@ -748,13 +696,12 @@ async def main():
     while running:
         current_level = level_state["level"]
 
-        # Mode or level tier changed: pre-build attack tunes (and switch music if it's on)
+        # Mode or level tier changed: pre-build attack tunes so the first shot doesn't stutter
         wanted_key = (game_mode, sound_tier(current_level))
-        if wanted_key != music_key:
-            music_key = wanted_key
+        if wanted_key != tune_key:
+            tune_key = wanted_key
             for tool in ATTACK_TUNES:
                 get_attack_sfx(tool, game_mode, current_level)
-            refresh_music()
 
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
@@ -762,11 +709,6 @@ async def main():
             elif event.type == pygame.KEYDOWN:
                 if event.key == pygame.K_m:
                     audio_muted = not audio_muted
-                    refresh_music()
-
-                elif event.key == pygame.K_b:
-                    music_on = not music_on
-                    refresh_music()
 
                 elif event.key == pygame.K_t:
                     game_mode = (game_mode % 3) + 1
@@ -1018,9 +960,9 @@ async def main():
             canvas.blit(b, b.get_rect(center=(WIDTH // 2, 70)))
 
         controls = {
-            1: "[P1: WASD move, SPACE/L-CLICK shoot, E/R-CLICK nova] [M: MUTE] [B: MUSIC] [R: RESET] [T: MODE]",
-            2: "[P1: WASD+SPACE+E] [P2: ARROWS move, ENTER shoot, R-SHIFT nova] [M: MUTE] [B: MUSIC] [T: MODE]",
-            3: "[SQUIRREL: WASD+SPACE+E] [VIPER: ARROWS move, ENTER/R-CTRL spit, R-SHIFT burst] [M: MUTE] [B: MUSIC] [T: MODE]",
+            1: "[P1: WASD move, SPACE/L-CLICK shoot, E/R-CLICK nova] [M: MUTE] [R: RESET] [T: MODE]",
+            2: "[P1: WASD+SPACE+E] [P2: ARROWS move, ENTER shoot, R-SHIFT nova] [M: MUTE] [T: MODE]",
+            3: "[SQUIRREL: WASD+SPACE+E] [VIPER: ARROWS move, ENTER/R-CTRL spit, R-SHIFT burst] [M: MUTE] [T: MODE]",
         }[game_mode]
         canvas.blit(font_hud.render(controls, True, (0, 215, 255)), (25, HEIGHT - 35))
         canvas.blit(font_hud_sm.render(GAME_VERSION, True, (120, 130, 160)), (WIDTH - 110, HEIGHT - 20))
