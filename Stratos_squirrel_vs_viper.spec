@@ -22,7 +22,7 @@ exe = EXE(
     a.binaries,
     a.datas,
     [],
-    name='MODIS_NeonTail',
+    name='Stratos_squirrel_vs_viper',
     debug=False,
     bootloader_ignore_signals=False,
     strip=False,

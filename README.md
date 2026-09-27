@@ -1,38 +1,53 @@
-# MODIS_NeonTail — Neon Tail & The Thermal Tracker
+# Stratos_squirrel_vs_viper
 
-A non-violent, chase-and-evade "chor police" (cops and robbers) game built with Python and [pygame-ce](https://pyga.me/), built from scratch as a first coding project and playable by kids and experienced players alike — easy to learn, hard to master.
+A neon arcade duel built with Python and [pygame-ce](https://pyga.me/), by Stratos Games.
+Blast laser fans and Nova rings as the Squirrel, or lead the Viper pack. Every level brings more
+vipers, and the squirrel's power grows to match, so both sides always have the same total strength.
 
-**Chor (evader):** Agent S.Q.U.I.R.E.L. — a nimble squirrel darting between neon obstacles.
-**Police (chaser):** V.I.P.E.R. — a hovering snake-drone security robot with heat vision.
+**Play it free in your browser:** https://saiqulmodi.github.io/Stratos_squirrel_vs_viper/
 
-Getting caught doesn't hurt anyone — you're beamed into a comical "stasis bubble" for a few seconds and released. 100 hand-and-code-generated levels, three game modes, sound and music, and a full local 2-player mode with gamepad support.
+## Game modes
 
-## Features
+Press **T** to switch mode (on the start screen or in game).
 
-- **Player vs AI** — outrun, outsmart, and distract V.I.P.E.R.'s chase AI, which predicts your movement and locks onto you once it gets close
-- **Local 2-player** — a full match with a round timer; both players swap between squirrel and V.I.P.E.R. halfway through, and whoever catches more as V.I.P.E.R. wins
-- **Gamepad support** — a connected controller works alongside the keyboard for whichever character you're controlling
-- **100 levels** with wall mazes, jump-pads, shields, whoopee-cushion landmines, time bubbles, gravity-flip zones, and tripwires
-- **Tools:** kick dirt to blind V.I.P.E.R., drop a decoy to distract it, or teleport-dodge out of danger
-- Sound effects and music, all synthesized from scratch — no external audio files
-- Menus, pause, level select, and a save file that remembers your last level and lifetime catch count
+| Mode | Who plays |
+|---|---|
+| Solo vs AI | Squirrel P1 vs an AI viper pack |
+| Dual Squirrel vs AI | Squirrel P1 + Squirrel P2 (co-op), each with their own viper pack |
+| Squirrel vs Viper | Squirrel P1 vs Player 2 steering the lead viper (the rest of the pack is AI) |
 
 ## Controls
 
+The game opens on a screen listing every key and rule. Press **H** (or START on a controller) to see it again.
+
+| Player | Move | Shoot (hold to keep firing) | Special |
+|---|---|---|---|
+| Squirrel P1 | W A S D | Space / left click (aim with mouse) | E / right click: Nova ring |
+| Squirrel P2 (Dual) | Arrow keys | Enter / Right Ctrl | Right Shift: Nova ring |
+| Viper (Squirrel vs Viper) | Arrow keys | Enter / Right Ctrl: venom spit | Right Shift: venom burst |
+
 | Key | Action |
 |---|---|
-| Arrow keys / WASD | Move (vs-AI mode: either works; 2-player: one set per player) |
-| Space | Kick dirt (blinds V.I.P.E.R. briefly if it hits) |
-| F | Drop a decoy |
-| T | Teleport dodge (long cooldown) |
-| N / P | Switch to the next / previous level |
-| Enter | Confirm / start / play |
-| Escape | Pause, go back, or quit (from the main menu) |
-| L | Level select (from the main menu) |
-| 2 | Start a 2-player match (from the main menu) |
-| Q | Quit (from the pause screen) |
+| T / R / M / H | Change mode / restart / mute / help screen |
+| 1 - 9, 0 | Jump to level 10 - 90, 100 |
+| ] or Page Up / [ or Page Down | Next / previous level ending in 0 |
+| Click LV 1 ... LV 100 | Level-jump buttons at the bottom of the screen |
 
-A connected gamepad's left stick or D-pad works as an alternative to arrow keys.
+**Game controllers:** pad 1 = Squirrel P1, pad 2 = Squirrel P2 (Dual) or the Viper (Squirrel vs Viper).
+Left stick / D-pad move, A / X shoot (right stick aims, hold to keep firing), B / Y / LB / RB special,
+START shows the help screen. In a browser, press any button on the controller once so the page detects it.
+
+## How the balance works
+
+- Squirrel and viper share one stats formula per level: HP `300 + 35*(L-1)`, defense `100 + 20*(L-1)`,
+  attack `35 + 4*(L-1)`, plus the same fire rate and special cooldown.
+- Each squirrel faces a pack of `1 + (L-1)//5` vipers (max 10 on screen; max 5 per squirrel in Dual).
+- A squirrel facing N vipers has N x HP, N x defense, fires N laser beams per shot and an N x denser Nova ring,
+  so the squirrel side's total strength equals the pack's.
+- Kill 5 vipers to reach the next level. Beating a whole pack refills everyone before the next pack.
+- Body contact hurts both sides. Green gems appear every 7 s: +25% attack for 10 s plus HP/DEF, for whoever grabs them.
+- Squirrel vs Viper is played in rounds: beat the whole pack (squirrel) or the squirrel (viper) to win a round.
+- Sound plays only on attacks. Every attack has its own tune, different per mode and every 3 levels.
 
 ## Running from source
 
@@ -45,55 +60,41 @@ python main.py
 
 Requires Python 3.12 and pygame-ce 2.5.8 (pinned in `requirements.txt`).
 
-## Running the standalone build
-
-No Python installation needed — grab `MODIS_NeonTail.exe` from a release and double-click it.
-
-## Building the .exe yourself
-
-```bash
-pip install pyinstaller
-pyinstaller --onefile --windowed --name MODIS_NeonTail --add-data "levels;levels" --add-data "assets;assets" main.py
-```
-
-The built executable appears in `dist/`. (`MODIS_NeonTail.spec` in this repo already captures these settings — running `pyinstaller MODIS_NeonTail.spec` works too.)
-
-## Playing in the browser (web build)
-
-The game also builds to WebAssembly with [pygbag](https://pypi.org/project/pygbag/), so it can run in a browser tab with no install. `main()` is `async` and awaits once per frame, which the browser needs; desktop play is unaffected.
+## Building the web version (GitHub Pages)
 
 ```bash
 pip install pygbag
-# build from a clean folder containing only main.py, levels/ and assets/
-# (pygbag bundles everything in the folder it is pointed at, including venv/)
-pygbag --build path\to\that\folder
+# build from a clean folder named stratos_squirrel_vs_viper containing only main.py
+pygbag --title "Stratos_squirrel_vs_viper" --build path\to\stratos_squirrel_vs_viper
 ```
 
-The result appears in `build/web/` inside that folder. Serve it with any static web server (for example `python -m http.server 8000 --directory build/web`) and open `index.html`. The browser asks for one click before it will allow sound.
+Copy the contents of that folder's `build/web/` into `docs/` and push. GitHub Pages serves `docs/` on the
+`main` branch. `docs/cover.png` is the screenshot used on stratos.games.
 
-Notes: browsers can only play OGG audio, so every sound has an `.ogg` copy next to its `.wav` (the game picks `.ogg` automatically in the browser and `.wav` on desktop). The runtime is downloaded from the pygbag CDN on first load, and `save.json` lives in the browser's temporary storage, so progress is not kept between visits.
+## Building the .exe
 
-## Running the tests
+```bash
+pip install pyinstaller
+pyinstaller Stratos_squirrel_vs_viper.spec
+```
+
+The executable appears in `dist/`.
+
+## Tests
 
 ```bash
 pip install pytest
-pytest -v
+pytest tests/test_balance.py -v
 ```
 
-Covers level loading (including every shipped level file), wall collision physics, and the save system.
+`tests/test_balance.py` checks the equal-power rules, viper packs, shard power-ups and attack sounds.
+The older files in `tests/` (`test_collision.py`, `test_level_loading.py`, `test_save_system.py`) were written
+for the earlier chase-game version of this project and do not match the current `main.py`.
 
-## Project structure
+## Website
 
-```
-main.py              -- the entire game
-levels/               -- level_001.json ... level_100.json
-assets/
-  sounds/             -- synthesized sound effects (.wav)
-  music/              -- synthesized background music (.wav)
-tests/                -- pytest suite
-requirements.txt
-MODIS_NeonTail.spec   -- PyInstaller build recipe
-```
+`website/stratos_games_section.html` is the ready-made section for https://stratos.games
+(paste it into an Elementor HTML widget).
 
 ## License
 
