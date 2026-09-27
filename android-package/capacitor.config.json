@@ -1,0 +1,12 @@
+{
+  "appId": "com.stratosgames.squirrelvsviper",
+  "appName": "Stratos_squirrel_vs_viper",
+  "webDir": "www",
+  "server": {
+    "androidScheme": "https"
+  },
+  "android": {
+    "allowMixedContent": false,
+    "backgroundColor": "#05060d"
+  }
+}

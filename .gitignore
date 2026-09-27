@@ -4,3 +4,4 @@ save.json
 .pytest_cache/
 build/
 dist/
+*.zip
