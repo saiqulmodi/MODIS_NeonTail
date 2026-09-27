@@ -2,11 +2,12 @@ import sys
 import math
 import random
 import struct
+import io
 import asyncio
 from array import array
 import pygame
 
-GAME_VERSION = "v5 ATTACK SOUNDS ONLY"
+GAME_VERSION = "v6 SOUND FIX"
 
 # ---------------------------------------------------------
 # 1. VIEWPORT & FULLSCREEN CONFIGURATION
@@ -68,24 +69,66 @@ def save_stored_high_score(score):
 audio_muted = False
 SFX_RATE = 22050
 
-def pcm16_sound(samples, rate):
-    """Wraps 16-bit mono PCM samples in a RIFF WAV container (works in the browser build too)."""
-    data = array("h", samples).tobytes()
-    header = bytearray()
-    header.extend(b"RIFF")
-    header.extend(struct.pack("<I", 36 + len(data)))
-    header.extend(b"WAVEfmt ")
-    header.extend(struct.pack("<I", 16))
-    header.extend(struct.pack("<H", 1))            # PCM
-    header.extend(struct.pack("<H", 1))            # mono
-    header.extend(struct.pack("<I", rate))
-    header.extend(struct.pack("<I", rate * 2))     # byte rate
-    header.extend(struct.pack("<H", 2))            # block align
-    header.extend(struct.pack("<H", 16))           # 16-bit
-    header.extend(b"data")
-    header.extend(struct.pack("<I", len(data)))
+def mixer_sound(samples, rate):
+    """Turns mono samples (-1.0..1.0) into a Sound in the mixer's OWN raw format.
+
+    pygame's Sound(buffer=...) plays bytes as raw data in whatever format the mixer
+    was opened with (rate, sample type, channels). Handing it a WAV file or a
+    different format makes it play the header as noise, at the wrong speed/pitch,
+    or (in the browser) as pure static. So we match the mixer exactly.
+    """
+    init = pygame.mixer.get_init()
+    if not init:
+        return None
+
+    # Preferred: a real WAV file object. SDL decodes the header and converts to
+    # whatever format the mixer uses (desktop or browser), so nothing is guessed.
     try:
-        return pygame.mixer.Sound(buffer=bytes(header + data))
+        pcm = array("h", (int(32767 * max(-1.0, min(1.0, v))) for v in samples)).tobytes()
+        wav = (b"RIFF" + struct.pack("<I", 36 + len(pcm)) + b"WAVEfmt "
+               + struct.pack("<IHHIIHH", 16, 1, 1, rate, rate * 2, 2, 16)
+               + b"data" + struct.pack("<I", len(pcm)) + pcm)
+        return pygame.mixer.Sound(file=io.BytesIO(wav))
+    except Exception:
+        pass
+
+    # Fallback: raw bytes in the mixer's own format
+    out_rate, fmt, channels = init
+
+    # Resample (linear) from our render rate to the mixer's rate
+    if out_rate != rate:
+        n_out = max(1, int(len(samples) * out_rate / rate))
+        step = rate / out_rate
+        res = []
+        last = len(samples) - 1
+        for i in range(n_out):
+            pos = i * step
+            j = int(pos)
+            if j >= last:
+                res.append(samples[last])
+            else:
+                f = pos - j
+                res.append(samples[j] * (1.0 - f) + samples[j + 1] * f)
+        samples = res
+
+    if fmt in (32, -32):     # 32-bit float (pygame reports it as -32)
+        typecode, conv = "f", (lambda v: v)
+    elif fmt == 16:          # 16-bit unsigned
+        typecode, conv = "H", (lambda v: int(v * 32767) + 32768)
+    elif fmt == 8:           # 8-bit unsigned
+        typecode, conv = "B", (lambda v: int(v * 127) + 128)
+    elif fmt == -8:          # 8-bit signed
+        typecode, conv = "b", (lambda v: int(v * 127))
+    else:                    # -16: 16-bit signed (the usual one)
+        typecode, conv = "h", (lambda v: int(v * 32767))
+
+    data = array(typecode)
+    for v in samples:
+        c = conv(v)
+        for _ in range(channels):
+            data.append(c)
+    try:
+        return pygame.mixer.Sound(buffer=data.tobytes())
     except Exception:
         return None
 
@@ -94,7 +137,7 @@ def render_sound(duration, fn, rate=SFX_RATE, peak=0.6):
     n = max(1, int(rate * duration))
     buf = [fn(i / rate) for i in range(n)]
     top = max(1e-6, max(abs(v) for v in buf))
-    scale = peak * 32767 / top
+    scale = peak / top
     fade_in = max(1, int(rate * 0.004))
     fade_out = max(1, int(rate * 0.015))
     out = []
@@ -104,8 +147,8 @@ def render_sound(duration, fn, rate=SFX_RATE, peak=0.6):
             g = i / fade_in
         elif i > n - fade_out:
             g = (n - i) / fade_out
-        out.append(int(v * scale * g))
-    return pcm16_sound(out, rate)
+        out.append(max(-1.0, min(1.0, v * scale * g)))
+    return mixer_sound(out, rate)
 
 TWO_PI = 2 * math.pi
 
