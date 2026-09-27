@@ -8,7 +8,7 @@ from array import array
 import pygame
 
 GAME_NAME = "Stratos_squirrel_vs_viper"
-GAME_VERSION = "v12"
+GAME_VERSION = "v13 TOUCH"
 
 # ---------------------------------------------------------
 # 1. VIEWPORT & FULLSCREEN CONFIGURATION
@@ -964,6 +964,11 @@ async def main():
         "SOUND",
         "- Only attacks make sound. Every attack has its own",
         "  tune, different in each mode and every 3 levels.",
+        "",
+        "TOUCH SCREEN (phone / tablet)",
+        "- Drag on the left side to move. Hold FIRE to shoot",
+        "  (auto-aims), tap NOVA. MODE / HELP / MUTE buttons",
+        "  are next to the level bar. Tap anywhere to start.",
     ]
 
     def draw_help_screen(current_level):
@@ -1000,8 +1005,61 @@ async def main():
                 canvas.blit(font_help.render(line, True, col), (x, y))
             y += 21
 
-        go = font_help_head.render("PRESS ENTER / SPACE, CLICK, OR START ON A CONTROLLER TO PLAY", True, (80, 255, 120))
-        canvas.blit(go, go.get_rect(center=(WIDTH // 2, HEIGHT - 28)))
+        go = font_help_head.render("PRESS ENTER / SPACE, CLICK, TAP, OR START ON A CONTROLLER TO PLAY", True, (80, 255, 120))
+        canvas.blit(go, go.get_rect(center=(WIDTH // 2, HEIGHT - 14)))
+
+    # ---- Touch controls (phones / tablets). Hidden until the screen is touched. ----
+    touch = {"on": False, "stick_id": None, "origin": (0.0, 0.0), "vec": (0.0, 0.0), "fire_ids": set()}
+    TOUCH_STICK_C = (170, HEIGHT - 200)
+    TOUCH_STICK_R = 95
+    TOUCH_FIRE_C = (WIDTH - 150, HEIGHT - 210)
+    TOUCH_FIRE_R = 72
+    TOUCH_NOVA_C = (WIDTH - 300, HEIGHT - 150)
+    TOUCH_NOVA_R = 50
+    TOUCH_MODE_BTN = pygame.Rect(level_buttons[-1][1].right + 10, HEIGHT - 66, 70, 22)
+    TOUCH_HELP_BTN = pygame.Rect(TOUCH_MODE_BTN.right + 6, HEIGHT - 66, 58, 22)
+    TOUCH_MUTE_BTN = pygame.Rect(TOUCH_HELP_BTN.right + 6, HEIGHT - 66, 58, 22)
+
+    def touch_aim(unit, enemies):
+        """FIRE button aims at the nearest enemy in AI modes, straight ahead in Squirrel vs Viper."""
+        alive = [e for e in enemies if e.hp > 0]
+        if game_mode != 3 and alive:
+            e = min(alive, key=lambda e: math.hypot(e.x - unit.x, e.y - unit.y))
+            return e.x, e.y
+        return unit.x + math.cos(unit.aim_angle) * 200, unit.y + math.sin(unit.aim_angle) * 200
+
+    def draw_touch_controls():
+        ui = pygame.Surface((WIDTH, HEIGHT), pygame.SRCALPHA)
+        # Joystick: appears where the left thumb lands
+        base = touch["origin"] if touch["stick_id"] is not None else TOUCH_STICK_C
+        knob = (base[0] + touch["vec"][0] * TOUCH_STICK_R, base[1] + touch["vec"][1] * TOUCH_STICK_R)
+        pygame.draw.circle(ui, (0, 229, 212, 45), base, TOUCH_STICK_R)
+        pygame.draw.circle(ui, (0, 229, 212, 140), base, TOUCH_STICK_R, 3)
+        pygame.draw.circle(ui, (0, 229, 212, 170), knob, 34)
+        # FIRE (hold)
+        firing = bool(touch["fire_ids"])
+        pygame.draw.circle(ui, (255, 90, 90, 190 if firing else 90), TOUCH_FIRE_C, TOUCH_FIRE_R)
+        pygame.draw.circle(ui, (255, 180, 180, 220), TOUCH_FIRE_C, TOUCH_FIRE_R, 3)
+        # NOVA (special) - fills up as the cooldown recharges
+        p1 = players[0]
+        ready = 1.0 - (p1.special_timer / p1.special_cd) if p1.special_cd else 1.0
+        pygame.draw.circle(ui, (0, 255, 170, 150 if p1.special_timer == 0 else 50), TOUCH_NOVA_C, TOUCH_NOVA_R)
+        pygame.draw.circle(ui, (160, 255, 200, 220), TOUCH_NOVA_C, TOUCH_NOVA_R, 3)
+        if p1.special_timer > 0:
+            pygame.draw.arc(ui, (0, 255, 170, 255), pygame.Rect(TOUCH_NOVA_C[0] - TOUCH_NOVA_R, TOUCH_NOVA_C[1] - TOUCH_NOVA_R, TOUCH_NOVA_R * 2, TOUCH_NOVA_R * 2),
+                            math.pi / 2, math.pi / 2 + ready * 2 * math.pi, 5)
+        canvas.blit(ui, (0, 0))
+        for text, center in (("FIRE", TOUCH_FIRE_C), ("NOVA", TOUCH_NOVA_C)):
+            t = font_hud.render(text, True, (255, 255, 255))
+            canvas.blit(t, t.get_rect(center=center))
+        mv = font_hud_sm.render("MOVE", True, (180, 255, 245))
+        canvas.blit(mv, mv.get_rect(center=(base[0], base[1] + TOUCH_STICK_R + 14)))
+        # Small tap buttons next to the level bar
+        for rect, label in ((TOUCH_MODE_BTN, "MODE"), (TOUCH_HELP_BTN, "HELP"), (TOUCH_MUTE_BTN, "UNMUTE" if audio_muted else "MUTE")):
+            pygame.draw.rect(canvas, (30, 40, 70), rect, border_radius=4)
+            pygame.draw.rect(canvas, (0, 229, 212), rect, 1, border_radius=4)
+            t = font_hud_sm.render(label, True, (230, 255, 250))
+            canvas.blit(t, t.get_rect(center=rect.center))
 
     running = True
     while running:
@@ -1015,8 +1073,64 @@ async def main():
                 get_attack_sfx(tool, game_mode, current_level)
 
         for event in pygame.event.get():
+            # Touch screens also send fake mouse clicks for every finger; the finger events handle touch
+            if event.type in (pygame.MOUSEBUTTONDOWN, pygame.MOUSEBUTTONUP, pygame.MOUSEMOTION) and getattr(event, "touch", False):
+                continue
+
             if event.type == pygame.QUIT:
                 running = False
+
+            # ---- Touch screen (phone / tablet) ----
+            elif event.type == pygame.FINGERDOWN:
+                touch["on"] = True
+                tx, ty = event.x * WIDTH, event.y * HEIGHT
+                fid = event.finger_id
+                if TOUCH_MODE_BTN.collidepoint(tx, ty):
+                    game_mode = (game_mode % 3) + 1
+                    pvp_wins["squirrel"] = pvp_wins["viper"] = 0
+                    reset_game(current_level)
+                elif TOUCH_HELP_BTN.collidepoint(tx, ty):
+                    show_help = not show_help
+                elif TOUCH_MUTE_BTN.collidepoint(tx, ty):
+                    audio_muted = not audio_muted
+                    if audio_muted:
+                        stop_all_sound()
+                elif show_help:
+                    show_help = False
+                elif any(r.collidepoint(tx, ty) for _, r in level_buttons):
+                    for lvl, r in level_buttons:
+                        if r.collidepoint(tx, ty):
+                            start_level(lvl)
+                            game_over = False
+                            break
+                elif game_over:
+                    reset_game(current_level)
+                elif math.hypot(tx - TOUCH_NOVA_C[0], ty - TOUCH_NOVA_C[1]) < TOUCH_NOVA_R * 1.3:
+                    squirrel_nova(players[0])
+                elif tx < WIDTH / 2:
+                    touch["stick_id"] = fid
+                    touch["origin"] = (tx, ty)
+                    touch["vec"] = (0.0, 0.0)
+                else:
+                    touch["fire_ids"].add(fid)
+
+            elif event.type == pygame.FINGERMOTION:
+                if event.finger_id == touch["stick_id"]:
+                    ox_, oy_ = touch["origin"]
+                    vx_ = (event.x * WIDTH - ox_) / TOUCH_STICK_R
+                    vy_ = (event.y * HEIGHT - oy_) / TOUCH_STICK_R
+                    m = math.hypot(vx_, vy_)
+                    if m < 0.15:
+                        vx_ = vy_ = 0.0
+                    elif m > 1.0:
+                        vx_, vy_ = vx_ / m, vy_ / m
+                    touch["vec"] = (vx_, vy_)
+
+            elif event.type == pygame.FINGERUP:
+                touch["fire_ids"].discard(event.finger_id)
+                if event.finger_id == touch["stick_id"]:
+                    touch["stick_id"] = None
+                    touch["vec"] = (0.0, 0.0)
 
             # Start / help screen: T changes mode, M mutes, anything else starts the game
             elif show_help and event.type in (pygame.KEYDOWN, pygame.MOUSEBUTTONDOWN):
@@ -1159,6 +1273,7 @@ async def main():
             # P1 Controls (WASD + controller 1)
             if players[0].hp > 0:
                 jx, jy = pad_move("p1")
+                jx, jy = add_input(jx, touch["vec"][0]), add_input(jy, touch["vec"][1])
                 players[0].move(add_input(keys[pygame.K_d] - keys[pygame.K_a], jx), add_input(keys[pygame.K_s] - keys[pygame.K_w], jy))
                 players[0].update()
 
@@ -1170,10 +1285,13 @@ async def main():
 
             # Hold to keep firing (keyboard, mouse or controller A) - the fire rate limit still applies
             mouse_on_bar = any(r.collidepoint(pygame.mouse.get_pos()) for _, r in level_buttons)
-            if players[0].hp > 0 and (keys[pygame.K_SPACE] or (pygame.mouse.get_pressed()[0] and not mouse_on_bar) or pad_held("p1")):
+            mouse_fire = pygame.mouse.get_pressed()[0] and not mouse_on_bar and not touch["on"]
+            if players[0].hp > 0 and (keys[pygame.K_SPACE] or mouse_fire or pad_held("p1") or touch["fire_ids"]):
                 j = pad_for("p1")
                 if j is not None and pad_held("p1"):
                     tx, ty = pad_aim(j, players[0], vipers, players[0].aim_angle)
+                elif touch["fire_ids"]:
+                    tx, ty = touch_aim(players[0], vipers)
                 else:
                     tx, ty = pygame.mouse.get_pos()
                 squirrel_shot(players[0], tx, ty)
@@ -1334,7 +1452,7 @@ async def main():
             if p.hp > 0:
                 p.draw(canvas)
 
-        if not game_over:
+        if not game_over and not touch["on"]:
             mx, my = pygame.mouse.get_pos()
             pygame.draw.circle(canvas, (0, 255, 230), (mx, my), 7, 1)
             pygame.draw.line(canvas, (0, 255, 230), (mx - 10, my), (mx + 10, my), 1)
@@ -1399,6 +1517,8 @@ async def main():
         }[game_mode]
         if pads:
             controls += f" [PAD: {len(pads)} CONNECTED]"
+        if touch["on"]:
+            controls = "[TOUCH: drag left side = move | hold FIRE = shoot (auto-aim) | NOVA = special | tap LV to jump level]"
         canvas.blit(font_hud.render(controls, True, (0, 215, 255)), (25, HEIGHT - 35))
         canvas.blit(font_hud_sm.render(f"{GAME_NAME} {GAME_VERSION}", True, (120, 130, 160)), (WIDTH - 200, HEIGHT - 20))
 
@@ -1416,6 +1536,9 @@ async def main():
 
         if show_help:
             draw_help_screen(current_level)
+
+        if touch["on"]:
+            draw_touch_controls()
 
         ox, oy = 0, 0
         if shake_intensity > 0:
