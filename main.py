@@ -6,7 +6,7 @@ import asyncio
 from array import array
 import pygame
 
-GAME_VERSION = "v4 NO BG MUSIC"
+GAME_VERSION = "v5 ATTACK SOUNDS ONLY"
 
 # ---------------------------------------------------------
 # 1. VIEWPORT & FULLSCREEN CONFIGURATION
@@ -165,14 +165,14 @@ def render_tune(instrument, base, notes, scale, transpose, tempo):
         semi = scale[step % len(scale)] + 12 * (step // len(scale)) + transpose
         starts.append((t0, base * 2 ** (semi / 12.0)))
         t0 += dur * tempo
-    ring = 0.18
-    total = t0 + ring
+    ring = 0.08   # short tail so rapid fire never blends into a continuous drone
+    total = min(0.35, t0 + ring)
 
     def fn(t):
         v = 0.0
         for st, fr in starts:
             lt = t - st
-            if 0.0 <= lt < ring + 0.25:
+            if 0.0 <= lt < total:
                 v += voice(instrument, fr, lt)
         return v
 
@@ -195,25 +195,20 @@ def get_attack_sfx(tool, mode, level):
             _attack_sfx_cache[key] = None
     return _attack_sfx_cache[key]
 
-def sfx_boom_audio():
-    # Enemy defeat: soft descending chime
-    return render_sound(0.35, lambda t: voice("bell", 330 - t * 300, t) + 0.5 * voice("drum", 90, t))
-
-def sfx_pickup_audio():
-    # Energy shard absorption: rising sparkle
-    return render_sound(0.25, lambda t: voice("bell", 880 * (1 + t * 2), t))
-
-def sfx_round_audio():
-    # Round / level win fanfare
-    notes = [(523.25, 0.0), (659.25, 0.1), (783.99, 0.2), (1046.5, 0.3)]
-    return render_sound(0.75, lambda t: sum(voice("bell", f, t - s) for f, s in notes if t >= s))
-
 def play_sfx(sfx):
+    """Only attack actions make sound. A repeat of the same attack restarts its sound instead of stacking copies."""
     if sfx and not audio_muted:
         try:
+            sfx.stop()
             sfx.play()
         except Exception:
             pass
+
+def stop_all_sound():
+    try:
+        pygame.mixer.stop()
+    except Exception:
+        pass
 
 # ---------------------------------------------------------
 # 4. PROJECTILES, PARTICLES & ENERGY SHARDS
@@ -560,13 +555,6 @@ async def main():
     font_hud_sm = pygame.font.SysFont("consolas", 11, bold=True)
     font_big = pygame.font.SysFont("arial", 48, bold=True)
 
-    try:
-        snd_boom = sfx_boom_audio()
-        snd_pickup = sfx_pickup_audio()
-        snd_round = sfx_round_audio()
-    except Exception:
-        snd_boom = snd_pickup = snd_round = None
-
     tune_key = None
 
     game_mode = 1  # 1: Solo vs AI, 2: Dual Squirrel vs AI, 3: Squirrel vs Viper
@@ -602,6 +590,7 @@ async def main():
 
     def start_level(level, message=None):
         """Everyone (squirrels and vipers) starts the level with the same full stats."""
+        stop_all_sound()
         level = max(1, level)
         level_state["level"] = level
         for p in players:
@@ -661,7 +650,6 @@ async def main():
 
     def pvp_round_over(winner):
         pvp_wins[winner] += 1
-        play_sfx(snd_round)
         start_level(level_state["level"] + 1,
                     f"{winner.upper()} WINS THE ROUND!  NEXT: LEVEL {level_state['level'] + 1}  (both refilled, equal stats)")
 
@@ -670,7 +658,6 @@ async def main():
             vipers.remove(viper)
         for _ in range(16):
             particles.append(Particle(viper.x, viper.y, (60, 220, 90)))
-        play_sfx(snd_boom)
         if game_mode == 3:
             pvp_round_over("squirrel")
             return
@@ -682,7 +669,6 @@ async def main():
         update_high_score(killer.score)
         level_state["kills"] += 1
         if level_state["kills"] % 5 == 0:
-            play_sfx(snd_round)
             start_level(level_state["level"] + 1)
         else:
             # Fair fights: the next duel starts with everyone back at full strength
@@ -709,6 +695,8 @@ async def main():
             elif event.type == pygame.KEYDOWN:
                 if event.key == pygame.K_m:
                     audio_muted = not audio_muted
+                    if audio_muted:
+                        stop_all_sound()
 
                 elif event.key == pygame.K_t:
                     game_mode = (game_mode % 3) + 1
@@ -811,7 +799,6 @@ async def main():
                         for _ in range(12):
                             particles.append(Particle(f.x, f.y, (255, 230, 90)))
                         shards.remove(s)
-                        play_sfx(snd_pickup)
                         break
 
             # New shards appear regularly in every mode, anywhere in the middle of the arena
@@ -886,7 +873,6 @@ async def main():
 
             # Defeats
             if game_mode == 3 and players[0].hp <= 0:
-                play_sfx(snd_boom)
                 pvp_round_over("viper")
             else:
                 for viper in vipers[:]:
