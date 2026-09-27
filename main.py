@@ -7,33 +7,60 @@ import asyncio
 from array import array
 import pygame
 
-GAME_VERSION = "v6 SOUND FIX"
+GAME_VERSION = "v7 FIT SCREEN"
 
 # ---------------------------------------------------------
 # 1. VIEWPORT & FULLSCREEN CONFIGURATION
 # ---------------------------------------------------------
-if sys.platform == "emscripten":
-    import platform
-    try:
-        # Stretch canvas edge-to-edge across the entire browser viewport
-        platform.window.canvas.style.position = "fixed"
-        platform.window.canvas.style.top = "0"
-        platform.window.canvas.style.left = "0"
-        platform.window.canvas.style.width = "100vw"
-        platform.window.canvas.style.height = "100vh"
-        platform.window.canvas.style.display = "block"
-        platform.window.canvas.style.margin = "0"
-        platform.window.canvas.style.padding = "0"
-        platform.window.canvas.style.border = "none"
-        platform.window.document.body.style.margin = "0"
-        platform.window.document.body.style.padding = "0"
-        platform.window.document.body.style.backgroundColor = "#05060d"
-        platform.window.document.body.style.overflow = "hidden"
-    except Exception:
-        pass
-
 WIDTH = 1280
 HEIGHT = 720
+
+_last_fit = None
+
+def fit_canvas_to_browser():
+    """Browser only: scale the whole 1280x720 game to fit the window without cropping.
+
+    Keeps the 16:9 shape (black bars fill any spare space) and works with any
+    Windows display scaling (100%, 125%, 150%...). Called regularly because the
+    pygbag loader resizes the canvas itself and would otherwise cut off the edges.
+    """
+    global _last_fit
+    if sys.platform != "emscripten":
+        return
+    try:
+        import platform
+        win = platform.window
+        vw = int(win.innerWidth)
+        vh = int(win.innerHeight)
+        scale = min(vw / WIDTH, vh / HEIGHT)
+        w = int(WIDTH * scale)
+        h = int(HEIGHT * scale)
+        left = (vw - w) // 2
+        top = (vh - h) // 2
+        style = win.canvas.style
+        # Re-apply if the window changed OR the loader overwrote our size
+        if _last_fit == (vw, vh) and style.width == f"{w}px" and style.height == f"{h}px":
+            return
+        _last_fit = (vw, vh)
+        body = win.document.body.style
+        body.margin = "0"
+        body.padding = "0"
+        body.overflow = "hidden"
+        body.backgroundColor = "#05060d"
+        style.position = "fixed"
+        style.inset = "auto"
+        style.right = "auto"
+        style.bottom = "auto"
+        style.margin = "0"
+        style.padding = "0"
+        style.border = "none"
+        style.display = "block"
+        style.left = f"{left}px"
+        style.top = f"{top}px"
+        style.width = f"{w}px"
+        style.height = f"{h}px"
+    except Exception:
+        pass
 
 SHOT_SPEED = 12.0      # Squirrel laser and viper venom travel at the same speed
 HIT_RADIUS = 20        # Same hit size for squirrel body and viper head
@@ -590,6 +617,8 @@ async def main():
         pass
 
     screen = pygame.display.set_mode((WIDTH, HEIGHT))
+    fit_canvas_to_browser()
+    fit_clock = 0
     pygame.display.set_caption("MODIS NeonTail - Squirrel vs Viper")
     canvas = pygame.Surface((WIDTH, HEIGHT))
     clock = pygame.time.Clock()
@@ -1018,6 +1047,11 @@ async def main():
 
         pygame.display.flip()
         clock.tick(60)
+        # Keep the whole screen (including the power panels) inside the browser window
+        fit_clock += 1
+        if fit_clock >= 30:
+            fit_clock = 0
+            fit_canvas_to_browser()
         await asyncio.sleep(0)
 
 if __name__ == "__main__":
