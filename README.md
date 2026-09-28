@@ -10,11 +10,17 @@ vipers, and the squirrel's power grows to match, so both sides always have the s
 
 Press **T** to switch mode (on the start screen or in game).
 
-| Mode | Who plays |
-|---|---|
-| Solo vs AI | Squirrel P1 vs an AI viper pack |
-| Dual Squirrel vs AI | Squirrel P1 + Squirrel P2 (co-op), each with their own viper pack |
-| Squirrel vs Viper | Squirrel P1 vs Player 2 steering the lead viper (the rest of the pack is AI) |
+| # | Mode | Who plays | Power |
+|---|---|---|---|
+| 1 | Solo Squirrel vs AI | Squirrel P1 vs an AI viper pack | Human +10% |
+| 2 | Dual Squirrels vs AI | Squirrel P1 + Squirrel P2 (co-op), each with their own viper pack | Humans +10% |
+| 3 | Squirrel vs Viper | Squirrel P1 vs Player 2 steering the lead viper (the rest of the pack is AI) | Equal |
+| 4 | Viper vs AI Squirrel | Player 1 steers the lead viper (rest of the pack is AI) vs an AI squirrel | Human +10% |
+| 5 | Dual Vipers vs AI Squirrels | Player 1 and Player 2 each steer a lead viper vs two AI squirrels | Humans +10% |
+
+**Human vs AI (modes 1, 2, 4, 5):** every human-controlled character gets **+10% health, defense, attack and speed**
+compared with the AI, on top of the normal level growth (which is the same rate for both sides). AI helper vipers stay at 100%.
+**Player vs player (mode 3):** both sides are exactly equal.
 
 ## Controls
 
@@ -22,9 +28,8 @@ The game opens on a screen listing every key and rule. Press **H** (or START on 
 
 | Player | Move | Shoot (hold to keep firing) | Special |
 |---|---|---|---|
-| Squirrel P1 | W A S D | Space / left click (aim with mouse) | E / right click: Nova ring |
-| Squirrel P2 (Dual) | Arrow keys | Enter / Right Ctrl | Right Shift: Nova ring |
-| Viper (Squirrel vs Viper) | Arrow keys | Enter / Right Ctrl: venom spit | Right Shift: venom burst |
+| Player 1 (squirrel in modes 1-3, lead viper in modes 4-5) | W A S D | Space / left click (aim with mouse) | E / right click: Nova ring / venom burst |
+| Player 2 (squirrel in mode 2, viper in modes 3 and 5) | Arrow keys | Enter / Right Ctrl | Right Shift: Nova ring / venom burst |
 
 | Key | Action |
 |---|---|
@@ -33,7 +38,7 @@ The game opens on a screen listing every key and rule. Press **H** (or START on 
 | ] or Page Up / [ or Page Down | Next / previous level ending in 0 |
 | Click LV 1 ... LV 100 | Level-jump buttons at the bottom of the screen |
 
-**Game controllers:** pad 1 = Squirrel P1, pad 2 = Squirrel P2 (Dual) or the Viper (Squirrel vs Viper).
+**Game controllers:** pad 1 = Player 1, pad 2 = Player 2 (whatever character they play in the current mode).
 Left stick / D-pad move, A / X shoot (right stick aims, hold to keep firing), B / Y / LB / RB special,
 START shows the help screen. In a browser, press any button on the controller once so the page detects it.
 
@@ -47,6 +52,10 @@ START shows the help screen. In a browser, press any button on the controller on
 - Kill 5 vipers to reach the next level. Beating a whole pack refills everyone before the next pack.
 - Body contact hurts both sides. Green gems appear every 7 s: +25% attack for 10 s plus HP/DEF, for whoever grabs them.
 - Squirrel vs Viper is played in rounds: beat the whole pack (squirrel) or the squirrel (viper) to win a round.
+- Viper modes (4, 5): beat the AI squirrel(s) to level up; if your viper falls you take over the next viper in the pack;
+  losing the whole pack is game over. The AI squirrel keeps its distance, circles, dodges venom, grabs gems and fires
+  with the same weapons and fire rate as a human squirrel.
+- Human vs AI modes give the human side +10% health, defense, attack and speed (see Game modes).
 - Sound plays only on attacks. Every attack has its own tune, different per mode and every 3 levels.
 
 ## Running from source

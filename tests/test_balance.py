@@ -78,3 +78,39 @@ def test_every_attack_has_its_own_short_sound():
 def test_sound_length_is_correct_for_the_mixer_format():
     snd = g.render_sound(0.30, lambda t: g.voice("bell", 440, t))
     assert abs(snd.get_length() - 0.30) < 0.01
+
+
+@pytest.mark.parametrize("level", [1, 7, 30, 90])
+def test_human_vs_ai_gets_ten_percent_more(level):
+    ai_squirrel = g.SquirrelPlayer(0, 0, level=level)
+    human_squirrel = g.SquirrelPlayer(0, 0, level=level)
+    human_squirrel.apply_level_up(level, human_edge=True)
+    for k in ("max_hp", "max_defense", "attack_power"):
+        assert getattr(human_squirrel, k) == int(getattr(ai_squirrel, k) * g.HUMAN_EDGE + 0.5)
+    assert human_squirrel.speed == pytest.approx(ai_squirrel.speed * g.HUMAN_EDGE)
+    human_viper = g.ViperEnemy(level=level, controller=1, human_edge=True)
+    assert human_viper.max_hp == human_squirrel.max_hp
+    assert human_viper.base_speed == pytest.approx(ai_squirrel.speed * g.HUMAN_EDGE)
+
+
+def test_player_vs_player_stays_equal():
+    squirrel = g.SquirrelPlayer(0, 0, level=25)
+    viper = g.ViperEnemy(level=25, controller=2)
+    assert not squirrel.human_edge and not viper.human_edge
+    assert (squirrel.max_hp, squirrel.max_defense, squirrel.attack_power) == (viper.max_hp, viper.max_defense, viper.attack_power)
+    assert squirrel.speed == viper.base_speed
+
+
+def test_taking_over_a_viper_mid_fight_grants_the_edge_once():
+    viper = g.ViperEnemy(level=10)
+    base = viper.max_hp
+    viper.controller, viper.is_player_controlled = 1, True
+    viper.grant_human_edge()
+    viper.grant_human_edge()
+    assert viper.max_hp == int(base * g.HUMAN_EDGE + 0.5)
+    assert viper.base_speed == pytest.approx(g.fighter_speed(10) * g.HUMAN_EDGE)
+
+
+def test_five_modes_exist():
+    assert list(g.MODE_NAMES) == [1, 2, 3, 4, 5]
+    assert g.VS_AI_MODES == (1, 2, 4, 5)

@@ -32,15 +32,18 @@ Stratos_squirrel_vs_viper is a free neon arcade duel from Stratos Games.
 
 Play the Squirrel and blast laser fans and Nova rings at a hunting viper pack. Every level brings more vipers, and the squirrel's power grows to match, so the fight is always even and always getting bigger.
 
-THREE WAYS TO PLAY
+FIVE WAYS TO PLAY
 • Solo vs AI: one squirrel against a smart AI viper pack that dodges your lasers and races you for power-ups.
 • Dual Squirrel: 2-player co-op with a game controller or keyboard.
 • Squirrel vs Viper: 2-player head-to-head. Player 2 leads the viper pack.
+• Viper vs AI Squirrel: switch sides and lead the viper pack yourself.
+• Dual Vipers vs AI Squirrels: 2-player viper team.
 
 FAIR BY DESIGN
 • Squirrel and viper share the same health, defence, attack, fire rate and special at every level.
 • Face 3 vipers? Your squirrel gets 3x health and 3x defence, and fires 3 lasers at once plus a 3x bigger Nova ring.
 • Green power gems give +25% attack for 10 seconds, to whoever grabs them first. The vipers want them too!
+• Playing against the AI? You get a +10% edge in health, defence, attack and speed.
 
 FEATURES
 • Levels 1 to 100. Jump straight to level 10, 20 ... 100 with one tap.
