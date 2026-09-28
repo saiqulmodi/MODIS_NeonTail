@@ -6,6 +6,8 @@ vipers, and the squirrel's power grows to match, so both sides always have the s
 
 **Play it free in your browser:** https://saiqulmodi.github.io/Stratos_squirrel_vs_viper/
 
+**On a phone:** https://saiqulmodi.github.io/Stratos_squirrel_vs_viper/mobile/ (big joystick, FIRE and NOVA buttons; phones are also detected automatically on the main link)
+
 ## Game modes
 
 Press **T** to switch mode (on the start screen or in game).

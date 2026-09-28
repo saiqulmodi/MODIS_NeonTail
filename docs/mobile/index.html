@@ -1,0 +1,48 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#05060d">
+<title>Stratos_squirrel_vs_viper - Mobile</title>
+<meta name="description" content="Play Stratos_squirrel_vs_viper on your phone: touch controls with a joystick, FIRE and NOVA buttons.">
+<link rel="icon" href="../favicon.png">
+<style>
+  :root { --bg: #05060d; --panel: #0b1020; --cyan: #00e5d4; --red: #e8283c; --text: #e8eef7; --muted: #9fb0c6; }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; background: var(--bg); color: var(--text); font-family: system-ui, -apple-system, "Segoe UI", Roboto, Arial, sans-serif; }
+  body { min-height: 100vh; display: flex; align-items: center; justify-content: center; padding: 20px 16px; }
+  .card { width: 100%; max-width: 560px; text-align: center; }
+  h1 { font-size: clamp(24px, 7vw, 38px); margin: 0 0 6px; letter-spacing: .03em; color: #ffd24a; word-break: break-word; }
+  .sub { color: var(--muted); margin: 0 0 20px; font-size: 16px; }
+  img.cover { width: 100%; border-radius: 12px; border: 1px solid rgba(0,229,212,.35); margin-bottom: 20px; }
+  .play { display: block; width: 100%; padding: 20px; border: 0; border-radius: 16px; background: var(--red);
+          color: #fff; font-size: 26px; font-weight: 800; letter-spacing: .12em; text-decoration: none;
+          box-shadow: 0 0 0 4px #fff inset, 0 0 30px rgba(232,40,60,.55); }
+  .rotate { margin: 18px 0 8px; font-size: 18px; color: #ffd24a; font-weight: 700; }
+  ul { text-align: left; background: var(--panel); border: 1px solid rgba(0,229,212,.25); border-radius: 12px; padding: 14px 18px 14px 34px; margin: 10px 0 18px; line-height: 1.55; }
+  li b { color: var(--cyan); }
+  .small { color: var(--muted); font-size: 13px; }
+  a.alt { color: var(--cyan); }
+</style>
+</head>
+<body>
+<main class="card">
+  <h1>Stratos_squirrel_vs_viper</h1>
+  <p class="sub">Mobile version: touch controls</p>
+  <img class="cover" src="../cover.png" alt="Gameplay: a squirrel firing a fan of lasers at a pack of vipers" width="1280" height="720">
+
+  <a class="play" href="../?mobile=1">&#9654; PLAY</a>
+  <p class="rotate">&#x21bb; Turn your phone sideways</p>
+
+  <ul>
+    <li><b>Left thumb:</b> drag anywhere on the left side to move</li>
+    <li><b>FIRE</b> (big red button): hold to keep shooting, it aims for you</li>
+    <li><b>NOVA</b> (green button): tap for the special attack</li>
+    <li><b>MODE / HELP / MUTE</b> and <b>LV 1 &hellip; LV 100</b>: at the bottom of the screen</li>
+    <li>Tap the screen once to start (the first load takes about 20 seconds)</li>
+  </ul>
+  <p class="small">Needs an internet connection. On a computer? Use the <a class="alt" href="../">desktop version</a> (keyboard, mouse or game controller).</p>
+</main>
+</body>
+</html>

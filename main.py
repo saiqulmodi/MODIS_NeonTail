@@ -8,7 +8,7 @@ from array import array
 import pygame
 
 GAME_NAME = "Stratos_squirrel_vs_viper"
-GAME_VERSION = "v14 HUMAN+10%"
+GAME_VERSION = "v15 MOBILE"
 
 # ---------------------------------------------------------
 # 1. VIEWPORT & FULLSCREEN CONFIGURATION
@@ -17,6 +17,24 @@ WIDTH = 1280
 HEIGHT = 720
 
 _last_fit = None
+_portrait = False   # phone held upright (taller than wide)
+
+def detect_mobile():
+    """True on phones/tablets (finger as the main pointer) or with ?mobile in the link.
+    Desktop tests can force it with the SSV_MOBILE=1 environment variable."""
+    import os
+    if os.environ.get("SSV_MOBILE") == "1":
+        return True
+    if sys.platform != "emscripten":
+        return False
+    try:
+        import platform
+        win = platform.window
+        if "mobile" in str(win.location.search).lower() or "/mobile" in str(win.location.pathname).lower():
+            return True
+        return bool(win.matchMedia("(pointer: coarse)").matches)
+    except Exception:
+        return False
 
 def fit_canvas_to_browser():
     """Browser only: scale the whole 1280x720 game to fit the window without cropping.
@@ -25,7 +43,7 @@ def fit_canvas_to_browser():
     Windows display scaling (100%, 125%, 150%...). Called regularly because the
     pygbag loader resizes the canvas itself and would otherwise cut off the edges.
     """
-    global _last_fit
+    global _last_fit, _portrait
     if sys.platform != "emscripten":
         return
     try:
@@ -33,6 +51,7 @@ def fit_canvas_to_browser():
         win = platform.window
         vw = int(win.innerWidth)
         vh = int(win.innerHeight)
+        _portrait = vh > vw
         scale = min(vw / WIDTH, vh / HEIGHT)
         w = int(WIDTH * scale)
         h = int(HEIGHT * scale)
@@ -1149,16 +1168,26 @@ async def main():
         canvas.blit(go, go.get_rect(center=(WIDTH // 2, HEIGHT - 14)))
 
     # ---- Touch controls (phones / tablets). Hidden until the screen is touched. ----
-    touch = {"on": False, "stick_id": None, "origin": (0.0, 0.0), "vec": (0.0, 0.0), "fire_ids": set()}
-    TOUCH_STICK_C = (170, HEIGHT - 200)
-    TOUCH_STICK_R = 95
-    TOUCH_FIRE_C = (WIDTH - 150, HEIGHT - 210)
-    TOUCH_FIRE_R = 72
-    TOUCH_NOVA_C = (WIDTH - 300, HEIGHT - 150)
-    TOUCH_NOVA_R = 50
+    # On phones (auto-detected, or the ?mobile link) the controls are shown from the start, bigger and brighter
+    MOBILE = detect_mobile()
+    touch = {"on": MOBILE, "stick_id": None, "origin": (0.0, 0.0), "vec": (0.0, 0.0), "fire_ids": set(), "finger_seen": False}
+    if MOBILE:
+        TOUCH_STICK_C, TOUCH_STICK_R = (190, HEIGHT - 235), 125
+        TOUCH_FIRE_C, TOUCH_FIRE_R = (WIDTH - 175, HEIGHT - 250), 105
+        TOUCH_NOVA_C, TOUCH_NOVA_R = (WIDTH - 395, HEIGHT - 165), 70
+    else:
+        TOUCH_STICK_C, TOUCH_STICK_R = (170, HEIGHT - 200), 95
+        TOUCH_FIRE_C, TOUCH_FIRE_R = (WIDTH - 150, HEIGHT - 210), 72
+        TOUCH_NOVA_C, TOUCH_NOVA_R = (WIDTH - 300, HEIGHT - 150), 50
+    font_touch_big = pygame.font.SysFont("arial", 34 if MOBILE else 22, bold=True)
+    font_touch_small = pygame.font.SysFont("arial", 18 if MOBILE else 13, bold=True)
     TOUCH_MODE_BTN = pygame.Rect(level_buttons[-1][1].right + 10, HEIGHT - 66, 70, 22)
     TOUCH_HELP_BTN = pygame.Rect(TOUCH_MODE_BTN.right + 6, HEIGHT - 66, 58, 22)
     TOUCH_MUTE_BTN = pygame.Rect(TOUCH_HELP_BTN.right + 6, HEIGHT - 66, 58, 22)
+
+    def tap_rect(r):
+        """Small on-screen buttons get a taller tap area on phones (fingers are bigger than a mouse)."""
+        return r.inflate(4, 26) if MOBILE else r
 
     def touch_aim(unit, enemies):
         """FIRE button aims at the nearest enemy in AI modes, straight ahead in Squirrel vs Viper."""
@@ -1189,32 +1218,41 @@ async def main():
         else:
             squirrel_nova(players[0])
 
-    def draw_touch_controls():
+    def draw_touch_controls(big=True):
         ui = pygame.Surface((WIDTH, HEIGHT), pygame.SRCALPHA)
+        if not big:
+            draw_small_touch_buttons()
+            return
         # Joystick: appears where the left thumb lands
         base = touch["origin"] if touch["stick_id"] is not None else TOUCH_STICK_C
         knob = (base[0] + touch["vec"][0] * TOUCH_STICK_R, base[1] + touch["vec"][1] * TOUCH_STICK_R)
-        pygame.draw.circle(ui, (0, 229, 212, 45), base, TOUCH_STICK_R)
-        pygame.draw.circle(ui, (0, 229, 212, 140), base, TOUCH_STICK_R, 3)
-        pygame.draw.circle(ui, (0, 229, 212, 170), knob, 34)
-        # FIRE (hold)
+        pygame.draw.circle(ui, (0, 229, 212, 60), base, TOUCH_STICK_R)
+        pygame.draw.circle(ui, (0, 229, 212, 200), base, TOUCH_STICK_R, 4)
+        pygame.draw.circle(ui, (0, 229, 212, 210), knob, int(TOUCH_STICK_R * 0.38))
+        # FIRE (hold): solid, bright and always clearly visible
         firing = bool(touch["fire_ids"])
-        pygame.draw.circle(ui, (255, 90, 90, 190 if firing else 90), TOUCH_FIRE_C, TOUCH_FIRE_R)
-        pygame.draw.circle(ui, (255, 180, 180, 220), TOUCH_FIRE_C, TOUCH_FIRE_R, 3)
+        pygame.draw.circle(ui, (255, 60, 60, 70), TOUCH_FIRE_C, TOUCH_FIRE_R + 14)                    # glow
+        pygame.draw.circle(ui, (255, 70, 70, 255) if firing else (225, 40, 55, 235), TOUCH_FIRE_C, TOUCH_FIRE_R)
+        pygame.draw.circle(ui, (255, 255, 255, 255), TOUCH_FIRE_C, TOUCH_FIRE_R, 5)
         # NOVA (special) - fills up as the cooldown recharges
         p1 = p1_unit() or players[0]
         ready = 1.0 - (p1.special_timer / p1.special_cd) if p1.special_cd else 1.0
-        pygame.draw.circle(ui, (0, 255, 170, 150 if p1.special_timer == 0 else 50), TOUCH_NOVA_C, TOUCH_NOVA_R)
-        pygame.draw.circle(ui, (160, 255, 200, 220), TOUCH_NOVA_C, TOUCH_NOVA_R, 3)
+        pygame.draw.circle(ui, (0, 200, 140, 235) if p1.special_timer == 0 else (0, 110, 80, 200), TOUCH_NOVA_C, TOUCH_NOVA_R)
+        pygame.draw.circle(ui, (255, 255, 255, 255), TOUCH_NOVA_C, TOUCH_NOVA_R, 4)
         if p1.special_timer > 0:
-            pygame.draw.arc(ui, (0, 255, 170, 255), pygame.Rect(TOUCH_NOVA_C[0] - TOUCH_NOVA_R, TOUCH_NOVA_C[1] - TOUCH_NOVA_R, TOUCH_NOVA_R * 2, TOUCH_NOVA_R * 2),
-                            math.pi / 2, math.pi / 2 + ready * 2 * math.pi, 5)
+            pygame.draw.arc(ui, (120, 255, 200, 255), pygame.Rect(TOUCH_NOVA_C[0] - TOUCH_NOVA_R, TOUCH_NOVA_C[1] - TOUCH_NOVA_R, TOUCH_NOVA_R * 2, TOUCH_NOVA_R * 2),
+                            math.pi / 2, math.pi / 2 + ready * 2 * math.pi, 7)
         canvas.blit(ui, (0, 0))
-        for text, center in (("FIRE", TOUCH_FIRE_C), ("NOVA", TOUCH_NOVA_C)):
-            t = font_hud.render(text, True, (255, 255, 255))
-            canvas.blit(t, t.get_rect(center=center))
-        mv = font_hud_sm.render("MOVE", True, (180, 255, 245))
-        canvas.blit(mv, mv.get_rect(center=(base[0], base[1] + TOUCH_STICK_R + 14)))
+        for text, sub, center in (("FIRE", "hold", TOUCH_FIRE_C), ("NOVA", "tap" if p1.special_timer == 0 else "charging", TOUCH_NOVA_C)):
+            t = font_touch_big.render(text, True, (255, 255, 255))
+            canvas.blit(t, t.get_rect(center=(center[0], center[1] - 6)))
+            s = font_touch_small.render(sub, True, (255, 235, 235))
+            canvas.blit(s, s.get_rect(center=(center[0], center[1] + t.get_height() // 2 + 4)))
+        mv = font_touch_small.render("MOVE", True, (180, 255, 245))
+        canvas.blit(mv, mv.get_rect(center=(base[0], base[1] + TOUCH_STICK_R + 16)))
+        draw_small_touch_buttons()
+
+    def draw_small_touch_buttons():
         # Small tap buttons next to the level bar
         for rect, label in ((TOUCH_MODE_BTN, "MODE"), (TOUCH_HELP_BTN, "HELP"), (TOUCH_MUTE_BTN, "UNMUTE" if audio_muted else "MUTE")):
             pygame.draw.rect(canvas, (30, 40, 70), rect, border_radius=4)
@@ -1237,6 +1275,16 @@ async def main():
             # Touch screens also send fake mouse clicks for every finger; the finger events handle touch
             if event.type in (pygame.MOUSEBUTTONDOWN, pygame.MOUSEBUTTONUP, pygame.MOUSEMOTION) and getattr(event, "touch", False):
                 continue
+            # Phones whose browser reports taps only as mouse clicks: treat the mouse as a finger
+            if (MOBILE and not touch["finger_seen"] and event.type in (pygame.MOUSEBUTTONDOWN, pygame.MOUSEBUTTONUP, pygame.MOUSEMOTION)
+                    and getattr(event, "button", 1) == 1):
+                if event.type == pygame.MOUSEMOTION and not event.buttons[0]:
+                    continue
+                ftype = {pygame.MOUSEBUTTONDOWN: pygame.FINGERDOWN, pygame.MOUSEBUTTONUP: pygame.FINGERUP,
+                         pygame.MOUSEMOTION: pygame.FINGERMOTION}[event.type]
+                event = pygame.event.Event(ftype, x=event.pos[0] / WIDTH, y=event.pos[1] / HEIGHT, finger_id=-1, from_mouse=True)
+            if event.type in (pygame.FINGERDOWN, pygame.FINGERMOTION) and not getattr(event, "from_mouse", False):
+                touch["finger_seen"] = True
 
             if event.type == pygame.QUIT:
                 running = False
@@ -1246,20 +1294,20 @@ async def main():
                 touch["on"] = True
                 tx, ty = event.x * WIDTH, event.y * HEIGHT
                 fid = event.finger_id
-                if TOUCH_MODE_BTN.collidepoint(tx, ty):
+                if tap_rect(TOUCH_MODE_BTN).collidepoint(tx, ty):
                     next_mode()
 
-                elif TOUCH_HELP_BTN.collidepoint(tx, ty):
+                elif tap_rect(TOUCH_HELP_BTN).collidepoint(tx, ty):
                     show_help = not show_help
-                elif TOUCH_MUTE_BTN.collidepoint(tx, ty):
+                elif tap_rect(TOUCH_MUTE_BTN).collidepoint(tx, ty):
                     audio_muted = not audio_muted
                     if audio_muted:
                         stop_all_sound()
                 elif show_help:
                     show_help = False
-                elif any(r.collidepoint(tx, ty) for _, r in level_buttons):
+                elif any(tap_rect(r).collidepoint(tx, ty) for _, r in level_buttons):
                     for lvl, r in level_buttons:
-                        if r.collidepoint(tx, ty):
+                        if tap_rect(r).collidepoint(tx, ty):
                             start_level(lvl)
                             game_over = False
                             break
@@ -1687,10 +1735,10 @@ async def main():
         vp_hp, vp_def, vp_atk = s_now["max_hp"], s_now["max_defense"], s_now["attack_power"]
         if game_mode in (1, 2):
             txt2 = (f"AI VIPER: HP {vp_hp} DEF {vp_def} ATK {vp_atk}      |      "
-                    f"YOUR SQUIRREL x{pack_now} +10%: HP {round(sq_hp * e)} DEF {round(sq_def * e)} ATK {round(sq_atk * e)}")
+                    f"YOUR SQUIRREL x{pack_now} +10%: HP {int(sq_hp * e + 0.5)} DEF {int(sq_def * e + 0.5)} ATK {int(sq_atk * e + 0.5)}")
             txt3, col3 = "HUMAN vs AI: YOUR SQUIRREL HAS +10% HEALTH, DEFENSE, ATTACK AND SPEED", (255, 170, 60)
         elif game_mode in (4, 5):
-            txt2 = (f"YOUR VIPER +10%: HP {round(vp_hp * e)} DEF {round(vp_def * e)} ATK {round(vp_atk * e)}      |      "
+            txt2 = (f"YOUR VIPER +10%: HP {int(vp_hp * e + 0.5)} DEF {int(vp_def * e + 0.5)} ATK {int(vp_atk * e + 0.5)}      |      "
                     f"AI SQUIRREL x{pack_now}: HP {sq_hp} DEF {sq_def} ATK {sq_atk}")
             txt3, col3 = "HUMAN vs AI: YOUR VIPER HAS +10% HEALTH, DEFENSE, ATTACK AND SPEED (AI HELPER VIPERS 100%)", (255, 170, 60)
         else:
@@ -1743,7 +1791,15 @@ async def main():
             draw_help_screen(current_level)
 
         if touch["on"]:
-            draw_touch_controls()
+            draw_touch_controls(big=not show_help)
+
+        if MOBILE and _portrait:
+            shade = pygame.Surface((WIDTH, HEIGHT), pygame.SRCALPHA)
+            shade.fill((5, 6, 13, 235))
+            canvas.blit(shade, (0, 0))
+            for i, (txt, col) in enumerate((("TURN YOUR PHONE SIDEWAYS", (255, 205, 50)), ("the game plays in landscape", (200, 220, 240)))):
+                t = (font_big if i == 0 else font_touch_big).render(txt, True, col)
+                canvas.blit(t, t.get_rect(center=(WIDTH // 2, HEIGHT // 2 - 30 + i * 70)))
 
         ox, oy = 0, 0
         if shake_intensity > 0:
