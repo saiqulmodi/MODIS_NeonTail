@@ -355,6 +355,55 @@ class Particle:
         if self.life > 0:
             pygame.draw.circle(surface, self.color, (int(self.x), int(self.y)), max(1, self.life // 5))
 
+BURST_FRAMES = 48       # ~0.8 s at 60 FPS: a beaten viper's pieces fly apart and fade before anything reappears
+BODY_HIT_RADIUS = 14    # body/tail segments are a slightly smaller target than the head (HIT_RADIUS)
+
+
+class BurstPiece:
+    """One neon piece of a beaten viper (head or a body/tail segment). Silent, cartoon, no gore."""
+    def __init__(self, x, y, radius, outer, inner, cx, cy):
+        self.x, self.y = float(x), float(y)
+        ang = math.atan2(y - cy, x - cx) + random.uniform(-0.6, 0.6) if (x, y) != (cx, cy) else random.uniform(0, math.pi * 2)
+        speed = random.uniform(2.5, 7.0)
+        self.vx, self.vy = math.cos(ang) * speed, math.sin(ang) * speed
+        self.radius = radius
+        self.outer, self.inner = outer, inner
+        self.life = BURST_FRAMES
+        self.spin = random.uniform(0, math.pi * 2)
+        self.spin_speed = random.uniform(-0.35, 0.35)
+
+    def update(self):
+        self.x += self.vx
+        self.y += self.vy
+        self.vx *= 0.94
+        self.vy *= 0.94
+        self.spin += self.spin_speed
+        self.life -= 1
+
+    def draw(self, surface):
+        if self.life <= 0:
+            return
+        r = max(1, int(self.radius * (0.4 + 0.6 * self.life / BURST_FRAMES)))
+        # a small wedge-cut disc so each piece looks like a broken shard that tumbles
+        pts = [(self.x + math.cos(self.spin + k * 2.1) * r, self.y + math.sin(self.spin + k * 2.1) * r) for k in range(3)]
+        pygame.draw.polygon(surface, self.outer, pts)
+        pygame.draw.circle(surface, self.inner, (int(self.x), int(self.y)), max(1, r // 2))
+
+
+class BurstFlash:
+    """Quick white ring at the head when a viper is beaten."""
+    def __init__(self, x, y):
+        self.x, self.y = x, y
+        self.life = 14
+
+    def update(self):
+        self.life -= 1
+
+    def draw(self, surface):
+        if self.life > 0:
+            pygame.draw.circle(surface, (255, 255, 255), (int(self.x), int(self.y)), int(18 + (14 - self.life) * 3), 3)
+
+
 class Shard:
     def __init__(self, x, y):
         self.x = float(max(40, min(WIDTH - 40, x)))
@@ -659,6 +708,31 @@ class ViperEnemy(Fighter):
         self.y = max(50, min(HEIGHT - 50, self.y + dy * self.base_speed))
         self._push_history()
 
+    def segment_points(self):
+        """(x, y, radius, index) of every body/tail segment, exactly where draw() puts them."""
+        pts = []
+        for i in range(1, self.num_segments):
+            idx = min(len(self.history) - 1, i * 3)
+            sx, sy = self.history[idx]
+            ratio = 1.0 - (i / self.num_segments)
+            pts.append((sx, sy, int(max(3, (7 + ratio * 8) * self.tail_scale)), i))
+        return pts
+
+    def colors(self, i):
+        """(outer, inner) colours of segment i -- same palette as draw()."""
+        if self.is_player_controlled:
+            return ((160, 25, 55) if i % 2 == 0 else (220, 50, 85)), (255, 130, 160)
+        return ((25, 90, 45) if i % 2 == 0 else (45, 140, 65)), (140, 220, 100)
+
+    def burst_pieces(self):
+        """The viper broken into pieces: one per segment plus the head."""
+        pieces = [BurstPiece(sx, sy, r, *self.colors(i), self.x, self.y) for sx, sy, r, i in self.segment_points()]
+        head_outer = (130, 20, 30) if self.is_player_controlled else (20, 85, 40)
+        head_inner = (220, 60, 80) if self.is_player_controlled else (60, 170, 75)
+        for _ in range(3):   # the head splits into three bigger pieces
+            pieces.append(BurstPiece(self.x, self.y, 11, head_outer, head_inner, self.x, self.y))
+        return pieces
+
     def draw(self, surface):
         step = 3
         for i in range(self.num_segments - 1, 0, -1):
@@ -725,6 +799,8 @@ async def main():
     pvp_wins = {"squirrel": 0, "viper": 0}
     viper_team = {"score": 0}          # Viper modes (4, 5): points for beating AI squirrels
     wave_state = {"pending": True}     # a new viper pack is due (start of a level)
+    bursts = []                        # pieces + flash of beaten vipers (BurstPiece / BurstFlash)
+    after_burst = {"action": None}     # level-up / round-over waiting for the burst to finish
     banner = {"text": "", "timer": 0}
     shard_clock = {"t": 0}
 
@@ -860,6 +936,8 @@ async def main():
         vipers.clear()
         projectiles.clear()
         shards.clear()
+        bursts.clear()
+        after_burst["action"] = None
         wave_state["pending"] = True
         s = level_stats(level)
         if message is None:
@@ -1034,11 +1112,13 @@ async def main():
     def viper_defeated(viper):
         if viper in vipers:
             vipers.remove(viper)
-        for _ in range(16):
-            particles.append(Particle(viper.x, viper.y, (60, 220, 90)))
+        # 2026-09-29: the viper bursts into pieces (head + every segment); a new pack, a level-up
+        # or a round change waits until the pieces have faded (see after_burst in the loop).
+        bursts.extend(viper.burst_pieces())
+        bursts.append(BurstFlash(viper.x, viper.y))
         if game_mode == 3:
             if not vipers:
-                pvp_round_over("squirrel")      # whole pack beaten
+                after_burst["action"] = lambda: pvp_round_over("squirrel")      # whole pack beaten
             else:
                 promote_pvp_leader()
             return
@@ -1053,7 +1133,8 @@ async def main():
         update_high_score(killer.score)
         level_state["kills"] += 1
         if level_state["kills"] % 5 == 0:
-            start_level(level_state["level"] + 1)
+            next_level = level_state["level"] + 1
+            after_burst["action"] = lambda: start_level(next_level)
         elif not vipers:
             # Wave cleared: everyone alive refills before the next full pack arrives
             for p in players:
@@ -1532,7 +1613,16 @@ async def main():
 
             # Next wave: a full viper pack per squirrel (squirrel power already matches the pack).
             # Viper modes: the pack comes once per level (losing it = game over).
-            if not vipers and (wave_state["pending"] or game_mode not in (4, 5)):
+            # A beaten viper's burst plays out first (~0.8 s); then any waiting level-up / round
+            # change runs, and only then does a new pack appear.
+            for b in bursts[:]:
+                b.update()
+                if b.life <= 0:
+                    bursts.remove(b)
+            if after_burst["action"] and not bursts:
+                action, after_burst["action"] = after_burst["action"], None
+                action()
+            if not vipers and not bursts and not after_burst["action"] and (wave_state["pending"] or game_mode not in (4, 5)):
                 spawn_wave()
                 wave_state["pending"] = False
 
@@ -1586,7 +1676,9 @@ async def main():
                 else:
                     viper.update_ai(players, projectiles, viper_spit, viper_burst, shards)
 
-            # Squirrel shots vs vipers (head = full damage, tail = half)
+            # Squirrel shots vs vipers: head = full damage; ANY body or tail segment = half damage
+            # (2 body/tail hits = 1 head hit). Until 2026-09-29 only the first 5 segments counted and
+            # shots passed straight through the rest of the body and the tail.
             for p in projectiles[:]:
                 if p.is_hostile:
                     continue
@@ -1596,11 +1688,10 @@ async def main():
                         hit = True
                         viper.take_damage(p.damage)
                     else:
-                        for seg_idx in range(3, min(len(viper.history), 18), 3):
-                            sx, sy = viper.history[seg_idx]
-                            if math.hypot(p.x - sx, p.y - sy) < 14:
+                        for sx, sy, _r, _i in viper.segment_points():
+                            if math.hypot(p.x - sx, p.y - sy) < BODY_HIT_RADIUS:
                                 hit = True
-                                viper.take_damage(p.damage // 2)
+                                viper.take_damage(max(1, p.damage // 2))
                                 break
                     if hit:
                         viper.last_hit_by = p.owner
@@ -1656,8 +1747,8 @@ async def main():
             if game_mode in (1, 2) and all(p.hp <= 0 for p in players):
                 game_over = True
                 update_high_score(players[0].score)
-            if game_mode in (4, 5) and not vipers and not wave_state["pending"]:
-                game_over = True       # the whole viper pack is gone
+            if game_mode in (4, 5) and not vipers and not wave_state["pending"] and not bursts:
+                game_over = True       # the whole viper pack is gone (after its last burst has played)
 
         # ---------------- RENDER ----------------
         current_level = level_state["level"]
@@ -1674,6 +1765,8 @@ async def main():
             p.draw(canvas)
         for part in particles:
             part.draw(canvas)
+        for b in bursts:
+            b.draw(canvas)
         for viper in vipers:
             viper.draw(canvas)
         for p in players:
