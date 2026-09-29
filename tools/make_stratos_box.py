@@ -14,8 +14,12 @@ os.makedirs(CACHE, exist_ok=True)
 
 ENGINE = [
     "0.9.3/pythons.js", "0.9.3/cpythonrc.py", "0.9.3/empty.html",
+    "0.9.3/empty.ogg",   # silent clip pythons.js plays to unlock audio; missing = stuck on "Ready to start" (2026-09-29)
     "0.9.3/cpython312/main.js", "0.9.3/cpython312/main.wasm", "0.9.3/cpython312/main.data",
     "index-0.9.3-cp312.json", "vtx.js", "vt.js", "vt/xterm.css", "vt/xterm.js", "vt/xterm-addon-image.js",
+    # `import pygame` installs this wheel from PYGPI (= cdn/ here); without it the game never starts
+    # (xterm log: "Async I/O error : file not found cdn/cp312/pygame_ce-...whl", found 2026-09-29).
+    "cp312/pygame_ce-2.5.7-cp312-cp312-wasm32_bi_emscripten.whl",
 ]
 
 def fetch(rel):
